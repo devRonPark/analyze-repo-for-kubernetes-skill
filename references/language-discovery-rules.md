@@ -30,5 +30,5 @@ Inspect `Cargo.toml`, workspace members, binaries, features, configuration loadi
 
 - A dependency declaration does not prove runtime use.
 - A development script does not prove the production startup command.
-- Framework defaults may support an Inferred finding, never a Confirmed finding without repository evidence.
+- 프레임워크 기본값은 추정됨 근거가 될 수 있지만, 저장소 근거 없이 확인됨이 될 수는 없다.
 - A missing Dockerfile is a finding, not an analysis failure.

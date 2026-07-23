@@ -1,6 +1,6 @@
 interface:
-  display_name: "Kubernetes Repository Analyzer"
-  short_description: "Analyze repositories before Kubernetes migration"
-  default_prompt: "Start with Interview-First Intake when no target is supplied: ask for a Repository URL or Local path. Then analyze it for Kubernetes migration readiness in summary mode. Include execution locus and configuration application phase. Do not generate manifests or request credential values."
+  display_name: "Kubernetes 저장소 분석기"
+  short_description: "Kubernetes 이관 전 저장소를 분석합니다"
+  default_prompt: "대상이 없으면 먼저 Repository URL 또는 Local path를 질문합니다. 대상이 정해지면 summary 모드로 Kubernetes 이관 준비 상태를 분석합니다. 실행 위치와 설정 적용 시점을 포함하고, manifest를 만들거나 인증 정보를 요청하지 않습니다."
 policy:
   allow_implicit_invocation: true

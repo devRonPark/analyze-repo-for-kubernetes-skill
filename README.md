@@ -11,10 +11,12 @@ Qwen Code 또는 Codex가 애플리케이션 Repository를 Kubernetes 이관 관
 - Dockerfile 없는 Repository와 모노레포 분석
 - 애플리케이션, Worker, Job, 정적 Frontend, Library 구분
 - Build와 Runtime 동작, 포트, 설정, 스토리지 분석
-- 관계별 Execution Locus 분류
-- 설정별 Application Phase 분류
-- `Confirmed`, `Inferred`, `Unknown`, `Conflicting` 근거 수준
-- `Ready`, `Needs Input`, `Blocked` 최종 판정
+- 관계별 실행 위치 분류
+- 설정별 적용 시점 분류
+- `확인됨`, `추정됨`, `미확인`, `상충됨` 근거 수준
+- `준비됨`, `추가 정보 필요`, `진행 불가` 최종 판정
+- 구성 요소별 역할·런타임·기동·포트·설정을 `key: value`와 파일·라인 근거로 브리핑
+- 확인된 값만 담은 Kubernetes 최소 초안과 적용에 필요한 최소 입력 누락
 - 분석 결과 정적 검사기
 
 ## Qwen Code 설치
@@ -98,7 +100,7 @@ Use Local path: .
 현재 Repository를 Kubernetes 이관 관점에서 summary 모드로 분석해.
 결과를 kubernetes-migration-summary.md에 저장해.
 Kubernetes manifest와 Dockerfile은 생성하지 마.
-확인할 수 없는 정보는 Unknown으로 표시해.
+확인할 수 없는 정보는 미확인으로 표시해.
 ```
 
 ## 결과 검사

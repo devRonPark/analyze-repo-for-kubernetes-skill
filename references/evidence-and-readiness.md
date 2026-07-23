@@ -1,26 +1,28 @@
-# Evidence and Readiness
+# 근거와 준비 상태
 
-## Evidence Status
+## 근거 상태
 
-Use exactly one status for every material finding:
+모든 중요한 발견 사항에 다음 상태 중 하나와 `path/to/file:line` 또는 `path/to/file:start-end` 형식의 저장소 상대 근거를 하나 이상 포함한다.
 
-- **Confirmed:** directly supported by repository source, executable configuration, or a successful command result
-- **Inferred:** strongly suggested by multiple clues but not directly established
-- **Unknown:** evidence is missing or insufficient
-- **Conflicting:** authoritative sources disagree
+- **확인됨:** 저장소 소스, 실행 가능한 설정, 성공한 명령 결과가 직접 뒷받침한다.
+- **추정됨:** 여러 단서가 강하게 시사하지만 직접 확정되지는 않았다.
+- **미확인:** 근거가 없거나 부족하다.
+- **상충됨:** 신뢰할 수 있는 소스끼리 다르다.
 
-Preserve conflicts. Do not silently choose whichever value appears most convenient for Kubernetes design.
+상충 사항을 보존한다. Kubernetes 설계에 편한 값을 임의로 선택하지 않는다.
 
-## Evidence Priority
+## 근거 우선순위
 
-Prefer executable source and runtime configuration over comments. Prefer production configuration over development examples. Treat README documentation as useful evidence that must still be checked against source when possible.
+주석보다 실행 가능한 소스와 런타임 설정을 우선한다. 개발 예시보다 운영 설정을 우선한다. README는 유용하지만 가능한 경우 소스와 교차 확인한다.
 
-## Readiness Verdict
+`미확인`은 근거가 없다는 뜻이 아니다. 확인한 관련 파일과 라인을 인용하고, 그 소스가 무엇을 확정하지 못하는지 쓴다. `상충됨`은 각 상충 값의 파일·라인 근거를 인용해야 한다. 파일명만, 디렉터리, 도구 출력, Compose 호스트 포트 매핑은 근거 요구를 충족하지 못한다.
 
-End with exactly one:
+## 준비 상태 판정
 
-- **Ready:** another agent can begin Kubernetes design without a blocking repository fact
-- **Needs Input:** design can start, but one or more choices or missing facts require user input
-- **Blocked:** a critical fact prevents a responsible design from beginning
+끝에는 반드시 하나를 둔다.
 
-List the specific reason for every Needs Input or Blocked verdict. Unknown does not automatically mean Blocked; judge whether the missing fact is required for the next design step.
+- **준비됨:** 다른 에이전트가 차단되는 저장소 사실 없이 Kubernetes 설계를 시작할 수 있다.
+- **추가 정보 필요:** 설계는 시작할 수 있지만 하나 이상의 선택 또는 미확인 사실에 사용자 결정이 필요하다.
+- **진행 불가:** 중요한 사실이 책임 있는 설계 시작을 막는다.
+
+`추가 정보 필요` 또는 `진행 불가`에는 각각의 구체적 이유를 쓴다. `미확인`이 자동으로 `진행 불가`를 뜻하지는 않는다. 다음 설계 단계에 필요한 사실인지 판단한다.
