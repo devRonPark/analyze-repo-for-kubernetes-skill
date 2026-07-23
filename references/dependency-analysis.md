@@ -11,22 +11,22 @@ Represent dependencies as directed relationships from a logical source component
 - endpoint or configuration name when known
 - required or optional
 - build-time or runtime
-- Execution Locus
+- 실행 위치
 - evidence status and file locations
 
-## Execution Locus Values
+## 실행 위치 값
 
 Use one of:
 
-- browser
-- server process
-- worker process
-- scheduled/job process
-- build pipeline
-- deployment controller
-- human/administrative
-- external system
-- Unknown
+- 브라우저
+- 서버 프로세스
+- worker 프로세스
+- scheduled/job 프로세스
+- 빌드 파이프라인
+- 배포 controller
+- 사람/관리자
+- 외부 시스템
+- 미확인
 
 The logical source and execution locus can differ. A static frontend component may logically depend on an API, while the actual network caller is the user's browser rather than the Nginx Pod.
 

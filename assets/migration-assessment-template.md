@@ -1,51 +1,92 @@
-# Kubernetes Migration Assessment
+# Kubernetes 이관 상세 평가
 
-## 1. Assessment Scope
+## 1. 평가 범위
 
-- Source type:
-- Repository URL or local path:
-- Access method:
-- Resolved repository root:
-- Branch or commit:
-- Analyzed path:
+- 대상 유형:
+- Repository URL 또는 local path:
+- 접근 방식:
+- 확인된 저장소 루트:
+- 브랜치 또는 commit:
+- 분석 경로:
 
-## 2. Executive Summary
+## 2. 한눈에 보기
 
-Summarize architecture, migration posture, and the most important unresolved decisions.
+- 배포 가능한 구성 요소: `구성 요소 이름` — 상태: 확인됨 / 근거: `path/to/file:line`
+- 확인된 수신 포트: `구성 요소: 포트 또는 비수신` — 상태: 확인됨 / 근거: `path/to/file:line`
+- 적용을 막는 최소 입력 누락: `없음 또는 값과 이유` — 상태: 미확인 / 근거: `path/to/file:line`
+- 현재 판정: 준비됨 | 추가 정보 필요 | 진행 불가 — 상태: 확인됨 / 근거: `path/to/file:line`
 
-## 3. Component Inventory
+## 3. 구성 요소별 배포 브리핑
 
-| Component | Path | Type | Deployable | Containerization | Evidence |
-|---|---|---|---|---|---|
+배포 가능한 구성 요소마다 아래 카드를 반복한다. 모든 속성은 반드시 `키: 값 — 상태: 확인됨|추정됨|미확인|상충됨 / 근거: path/to/file:line` 형식으로 쓴다.
 
-## 4. Component Details
+### 구성 요소: <이름>
 
-For each deployable component include purpose, language and runtime, build command, production startup command, listener or no listener, health behavior, storage, configuration with Application Phase, dependencies with Execution Locus, and evidence.
+#### 역할과 실행
 
-## 5. Repository Dependency Matrix
+- 역할:
+- 경로:
+- 유형:
+- 언어:
+- 프레임워크:
+- 런타임:
 
-| Source | Target | Type | Protocol | Phase | Execution Locus | Required | Evidence |
-|---|---|---|---|---|---|---|---|
+#### 빌드와 기동
 
-## 6. Repository Dependency Graph
+- 빌드 명령:
+- 운영 기동 명령:
+- 컨테이너화:
 
-```text
-source --[relationship; Execution Locus]--> target
-```
+#### 네트워크와 상태 확인
 
-## 7. Configuration and State
+- 프로토콜:
+- 수신 포트:
+- 상태 확인:
 
-Document configuration timing, secret names without values, writable paths, and persistence requirements.
+#### 설정과 상태
 
-## 8. Kubernetes Migration Risks
+- 설정:
+- Secret:
+- 저장소:
+- 볼륨 또는 세션:
+- 적용 시점:
 
-List migration-specific risks and conflicting evidence.
+#### Kubernetes 최소 초안
 
-## 9. Required Inputs
+저장소로 확인한 항목만 기록한다. 확인되지 않은 최소 필수값은 다음 `최소 입력 누락`에 쓴다.
 
-List missing information and user decisions needed for the next design step.
+- workload.kind:
+- metadata.name:
+- image:
+- command:
+- args:
+- containerPort:
+- Service:
+- Ingress:
 
-## 10. Final Readiness Verdict
+#### 최소 입력 누락
 
-- Verdict: Ready | Needs Input | Blocked
-- Rationale:
+- 없음 또는 필수 항목:
+
+## 4. 구성 요소 관계
+
+### 관계: <출발 구성 요소> -> <대상>
+
+- 연결 방식:
+- 프로토콜 또는 메커니즘:
+- 시점:
+- 실행 위치:
+- 필수 여부:
+
+## 5. 설정과 상태 상세
+
+구성 요소 카드에 기록한 설정별 적용 시점, Secret 여부, 저장소와 세션 상태를 더 설명한다. 모든 문장은 상태와 `path/to/file:line` 근거를 포함한다.
+
+## 6. 최소 입력 누락 상세
+
+manifest 초안 또는 적용을 막는 미확인 입력만 기록한다. 일반 운영 정책이나 작업 계획은 포함하지 않는다. 모든 항목에 상태와 `path/to/file:line` 근거를 포함한다.
+
+## 7. 최종 판정
+
+- 판정: 준비됨 | 추가 정보 필요 | 진행 불가
+- 근거:

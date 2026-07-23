@@ -1,49 +1,83 @@
-# Kubernetes Migration Summary
+# Kubernetes 이관 요약
 
-## 1. Scope and Verdict
+## 1. 범위
 
-- Source type:
-- Repository URL or local path:
-- Access method:
-- Resolved repository root:
-- Branch or commit:
-- Analyzed path:
-- Verdict: Ready | Needs Input | Blocked
+- 대상 유형:
+- Repository URL 또는 local path:
+- 접근 방식:
+- 확인된 저장소 루트:
+- 브랜치 또는 commit:
+- 분석 경로:
 
-## 2. Architecture at a Glance
+## 2. 한눈에 보기
 
-Summarize the deployable architecture and major external systems in a few paragraphs.
+- 배포 가능한 구성 요소: `구성 요소 이름` — 상태: 확인됨 / 근거: `path/to/file:line`
+- 확인된 수신 포트: `구성 요소: 포트 또는 비수신` — 상태: 확인됨 / 근거: `path/to/file:line`
+- 적용을 막는 최소 입력 누락: `없음 또는 값과 이유` — 상태: 미확인 / 근거: `path/to/file:line`
+- 현재 판정: 준비됨 | 추가 정보 필요 | 진행 불가 — 상태: 확인됨 / 근거: `path/to/file:line`
 
-## 3. Component Summary
+## 3. 구성 요소별 배포 브리핑
 
-| Component | Path | Type | Build | Runtime | Port | Containerization | Evidence |
-|---|---|---|---|---|---|---|---|
+배포 가능한 구성 요소마다 아래 카드를 반복한다. 모든 속성은 반드시 `키: 값 — 상태: 확인됨|추정됨|미확인|상충됨 / 근거: path/to/file:line` 형식으로 쓴다.
 
-## 4. Critical Dependency Matrix
+### 구성 요소: <이름>
 
-| Source | Target | Relationship | Phase | Execution Locus | Required | Evidence |
-|---|---|---|---|---|---|---|
+#### 역할과 실행
 
-### Dependency Graph
+- 역할:
+- 경로:
+- 유형:
+- 언어:
+- 프레임워크:
+- 런타임:
 
-```text
-source --[relationship; Execution Locus]--> target
-```
+#### 빌드와 기동
 
-## 5. Configuration Timing Highlights
+- 빌드 명령:
+- 운영 기동 명령:
+- 컨테이너화:
 
-| Component | Configuration | Application Phase | Change Effect | Secret | Evidence |
-|---|---|---|---|---|---|
+#### 네트워크와 상태 확인
 
-## 6. Kubernetes Mapping Summary
+- 프로토콜:
+- 수신 포트:
+- 상태 확인:
 
-Map each deployable component to a likely Kubernetes workload category without generating manifests.
+#### 설정과 상태
 
-## 7. Risks and Required Inputs
+- 설정:
+- Secret:
+- 저장소:
+- 볼륨 또는 세션:
+- 적용 시점:
 
-List only migration-relevant risks, Unknown facts, conflicts, and decisions required from the user.
+#### Kubernetes 최소 초안
 
-## 8. Evidence Index
+저장소로 확인한 항목만 기록한다. 확인되지 않은 최소 필수값은 다음 `최소 입력 누락`에 쓴다.
 
-| Finding | Status | Evidence |
-|---|---|---|
+- workload.kind:
+- metadata.name:
+- image:
+- command:
+- args:
+- containerPort:
+- Service:
+- Ingress:
+
+#### 최소 입력 누락
+
+- 없음 또는 필수 항목:
+
+## 4. 구성 요소 관계
+
+### 관계: <출발 구성 요소> -> <대상>
+
+- 연결 방식:
+- 시점:
+- 실행 위치:
+- 필수 여부:
+
+## 5. 최종 판정
+
+- 판정: 준비됨 | 추가 정보 필요 | 진행 불가
+- 근거:

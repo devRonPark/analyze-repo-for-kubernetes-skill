@@ -24,12 +24,13 @@ REQUIRED = [
 ]
 
 REQUIRED_TERMS = [
-    "Confirmed", "Inferred", "Unknown", "Conflicting",
-    "Ready", "Needs Input", "Blocked",
+    "확인됨", "추정됨", "미확인", "상충됨",
+    "준비됨", "추가 정보 필요", "진행 불가",
     "dependency matrix", "dependency graph",
     "A missing Dockerfile is a finding, not an analysis failure",
     "Do not generate Kubernetes manifests",
-    "Execution Locus", "Application Phase",
+    "실행 위치", "적용 시점",
+    "구성 요소별 배포 브리핑", "Kubernetes 최소 초안", "최소 입력 누락", "키: 값",
     "Default output mode: summary", "Interview-First Intake",
     "Repository URL", "Local path",
 ]
