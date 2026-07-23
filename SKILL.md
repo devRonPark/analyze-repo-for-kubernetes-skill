@@ -11,6 +11,10 @@ Analyze a repository far enough that a separate design or generation step can be
 
 **Core principle:** A correct `Unknown` is better than an unsupported conclusion.
 
+## User-Facing Language
+
+The skill's users are Korean. Write all stdout messages, prompts, progress updates, errors intended for the user, and final reports in Korean. Keep technical identifiers, file paths, command names, Kubernetes terms, and required contract labels in their original form when translation would reduce precision.
+
 ## Target Resolution Gate
 
 This gate runs **before any repository discovery tool call**. Keep these two locations separate:

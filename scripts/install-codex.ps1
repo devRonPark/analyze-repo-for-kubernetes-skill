@@ -12,5 +12,5 @@ if (Test-Path $TargetDir) {
 }
 Copy-Item -Recurse -Force $SourceDir $TargetDir
 
-Write-Host "Installed: $TargetDir"
-Write-Host "Restart Codex if the skill does not appear automatically."
+Write-Host "설치 완료: $TargetDir"
+Write-Host "스킬이 자동으로 표시되지 않으면 Codex를 다시 시작하세요."
