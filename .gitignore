@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.log
+kubernetes-migration-summary*.md
+kubernetes-migration-assessment*.md
+.DS_Store
