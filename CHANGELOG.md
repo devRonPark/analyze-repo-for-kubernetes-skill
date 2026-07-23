@@ -12,6 +12,11 @@ All notable changes to this project will be documented in this file.
 - Added structured absence evidence with `검색(scope=..., pattern=..., result=없음)`.
 - Differentiated summary relationship output from detailed matrix and graph output.
 - Updated report validation and tests for the revised evidence and output contracts.
+- Replaced forced component roles and deployment-configuration inference with fact-based deployment candidates, runtime dependencies, excluded items, and separate operating-environment deployment evidence.
+- Added component-specific package-manager and command-stage inference rules.
+- Added optional repository file and line-range checks to report validation.
+- Added fixed eight-case output regression fixtures and deterministic comparison.
+- Prioritized deployment-critical discovery and separated readiness blockers from operational recommendations.
 
 ## 0.1.0 - 2026-07-23
 

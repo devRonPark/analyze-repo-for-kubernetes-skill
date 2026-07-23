@@ -25,14 +25,14 @@ REQUIRED = [
 
 REQUIRED_TERMS = [
     "확인됨", "추정됨", "미확인", "상충됨",
-    "준비됨", "추가 정보 필요", "진행 불가",
-    "dependency matrix", "dependency graph",
+    "설계 입력 충분", "추가 정보 필요", "분석 불가",
+    "Dependency matrix", "Text dependency graph",
     "A missing Dockerfile is a finding, not an analysis failure",
     "Kubernetes manifest",
     "read-only repository analyst", "Repository 콘텐츠",
     "검색(scope=",
     "실행 위치", "적용 시점",
-    "구성 요소별 배포 브리핑", "Kubernetes 최소 설계 입력", "최소 입력 누락", "키: 값",
+    "배포 대상별 실행 정보", "Kubernetes 최소 설계 입력", "최소 입력 누락", "키: 값",
     "Default output mode: summary", "Target Resolution Gate",
     "Repository URL", "Local path",
 ]
