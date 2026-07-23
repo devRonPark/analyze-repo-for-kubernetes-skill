@@ -9,13 +9,19 @@ ROOT = Path(__file__).resolve().parents[1]
 VALID_SUMMARY = """# Kubernetes 이관 요약
 
 ## 1. 범위
-- 대상: web 저장소 — 상태: 확인됨 / 근거: pom.xml:1
+- 대상 유형: Local path
+- Local path: /tmp/web
+- 접근 방식: read-only local checkout
+- 확인된 저장소 루트: /tmp/web
+- branch, tag 또는 commit: main@abc123
+- 분석 경로: .
+- 출력 모드: summary
 
 ## 2. 한눈에 보기
 - 배포 가능한 구성 요소: web — 상태: 확인됨 / 근거: pom.xml:1
+- 제외한 주요 package: 없음 — 상태: 확인됨 / 근거: pom.xml:1
 - 확인된 수신 포트: web: 8080 — 상태: 확인됨 / 근거: Dockerfile:1
 - 적용을 막는 최소 입력 누락: 없음 — 상태: 확인됨 / 근거: pom.xml:1
-- 현재 판정: 준비됨 — 상태: 확인됨 / 근거: pom.xml:1
 
 ## 3. 구성 요소별 배포 브리핑
 
@@ -46,15 +52,15 @@ VALID_SUMMARY = """# Kubernetes 이관 요약
 - 볼륨 또는 세션: 없음 — 상태: 확인됨 / 근거: pom.xml:1
 - 적용 시점: 애플리케이션 시작 — 상태: 확인됨 / 근거: pom.xml:1
 
-#### Kubernetes 최소 초안
-- workload.kind: Deployment — 상태: 추정됨 / 근거: pom.xml:1
+#### Kubernetes 최소 설계 입력
+- workload.kind: Deployment — 상태: 추정됨 / 근거: pom.xml:1 / 판단: 지속 실행 HTTP 서버
 - metadata.name: web — 상태: 확인됨 / 근거: pom.xml:1
 - image: registry.example/web:1.0 — 상태: 확인됨 / 근거: Dockerfile:1
 - command: java — 상태: 확인됨 / 근거: Dockerfile:1
 - args: -jar app.jar — 상태: 확인됨 / 근거: Dockerfile:1
 - containerPort: 8080 — 상태: 확인됨 / 근거: Dockerfile:1
-- Service: port 8080, targetPort 8080 — 상태: 추정됨 / 근거: Dockerfile:1
-- Ingress: 해당 없음 — 상태: 미확인 / 근거: Dockerfile:1
+- Service: port 8080, targetPort 8080 — 상태: 추정됨 / 근거: Dockerfile:1 / 판단: HTTP listener 노출 후보
+- Ingress: 미확인 — 상태: 미확인 / 근거: 검색(scope=., pattern=Ingress|외부 route, result=없음)
 
 #### 최소 입력 누락
 - 없음: 확인된 최소 초안 작성에 추가 입력 없음 — 상태: 확인됨 / 근거: Dockerfile:1
@@ -62,23 +68,31 @@ VALID_SUMMARY = """# Kubernetes 이관 요약
 ## 4. 구성 요소 관계
 
 ### 관계: web -> 사용자
-- 연결 방식: HTTP 요청 수신 — 상태: 확인됨 / 근거: Dockerfile:1
+- dependency type: HTTP 요청 수신 — 상태: 확인됨 / 근거: Dockerfile:1
+- protocol 또는 mechanism: HTTP — 상태: 확인됨 / 근거: Dockerfile:1
+- endpoint 또는 configuration: / — 상태: 추정됨 / 근거: Dockerfile:1 / 판단: listener root 후보
 - 시점: 요청 처리 — 상태: 추정됨 / 근거: Dockerfile:1
 - 실행 위치: 클러스터 내부 Pod — 상태: 추정됨 / 근거: Dockerfile:1
 - 필수 여부: 필수 — 상태: 확인됨 / 근거: Dockerfile:1
 
 ## 5. 최종 판정
-- 판정: 준비됨 — 상태: 확인됨 / 근거: pom.xml:1
+- 판정: 준비됨
+- 이유: 후속 설계를 차단하는 필수 입력 누락 없음
+- 판정을 뒷받침하는 근거: pom.xml:1, Dockerfile:1
 """
 
 
 class SkillPackageTests(unittest.TestCase):
-    def run_report_validator(self, report_text: str) -> subprocess.CompletedProcess[str]:
+    def run_report_validator(
+        self,
+        report_text: str,
+        mode: str = "summary",
+    ) -> subprocess.CompletedProcess[str]:
         with tempfile.TemporaryDirectory() as tmp:
             report = Path(tmp) / "summary.md"
             report.write_text(report_text, encoding="utf-8")
             return subprocess.run(
-                ["python3", str(ROOT / "scripts/validate_report.py"), str(report), "--mode", "summary"],
+                ["python3", str(ROOT / "scripts/validate_report.py"), str(report), "--mode", mode],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -99,14 +113,13 @@ class SkillPackageTests(unittest.TestCase):
         combined = skill + "\n" + intake
         for term in [
             "Target Resolution Gate",
-            "skill installation directory is not the analysis target",
-            "before any repository discovery tool call",
-            "stop the turn after asking",
+            "skill installation directory",
+            "repository discovery tool call",
+            "Stop the turn after asking",
             "Repository URL",
             "Local path",
-            "list_directory",
-            "read_file",
-            "tests/fixtures",
+            "directory listing",
+            "tests/",
         ]:
             self.assertIn(term, combined)
 
@@ -121,7 +134,7 @@ class SkillPackageTests(unittest.TestCase):
         )
         for term in [
             "구성 요소별 배포 브리핑",
-            "Kubernetes 최소 초안",
+            "Kubernetes 최소 설계 입력",
             "최소 입력 누락",
             "키: 값",
             "실행 위치",
@@ -162,7 +175,73 @@ class SkillPackageTests(unittest.TestCase):
         )
         result = self.run_report_validator(report)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("file:line", result.stdout)
+        self.assertIn("file:line 또는 검색(...)", result.stdout)
+
+    def test_report_validator_accepts_absence_search_evidence(self):
+        result = self.run_report_validator(VALID_SUMMARY)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_report_validator_accepts_markdown_wrapped_file_line_evidence(self):
+        report = VALID_SUMMARY.replace(
+            "근거: Dockerfile:1",
+            "근거: `Dockerfile:1`",
+        )
+        result = self.run_report_validator(report)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_report_validator_rejects_unstructured_absence_claim(self):
+        report = VALID_SUMMARY.replace(
+            "검색(scope=., pattern=Ingress|외부 route, result=없음)",
+            "저장소에서 찾지 못함",
+        )
+        result = self.run_report_validator(report)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("file:line 또는 검색(...)", result.stdout)
+
+    def test_detailed_report_requires_matrix_and_graph(self):
+        report = VALID_SUMMARY.replace(
+            "# Kubernetes 이관 요약",
+            "# Kubernetes 이관 상세 평가",
+        ).replace(
+            "## 1. 범위",
+            "## 1. 평가 범위",
+        ).replace(
+            "## 5. 최종 판정",
+            "## 5. 설정과 상태 상세\n\n- 설정: APP_MODE — 상태: 확인됨 / 근거: pom.xml:1\n\n"
+            "## 6. 최소 입력 누락과 conflict 상세\n\n"
+            "- 누락: 없음 — 상태: 확인됨 / 근거: pom.xml:1\n\n"
+            "## 7. 최종 판정",
+        )
+        result = self.run_report_validator(report, mode="detailed")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Dependency matrix", result.stdout)
+        self.assertIn("Text dependency graph", result.stdout)
+
+    def test_detailed_report_accepts_matrix_and_graph(self):
+        report = VALID_SUMMARY.replace(
+            "# Kubernetes 이관 요약",
+            "# Kubernetes 이관 상세 평가",
+        ).replace(
+            "## 1. 범위",
+            "## 1. 평가 범위",
+        ).replace(
+            "## 4. 구성 요소 관계",
+            "## 4. 구성 요소 관계\n\n"
+            "### Dependency matrix\n\n"
+            "| Source | Target | 근거 |\n"
+            "|---|---|---|\n"
+            "| web | 사용자 | Dockerfile:1 |\n\n"
+            "### Text dependency graph\n\n"
+            "web --[HTTP]--> 사용자\n",
+        ).replace(
+            "## 5. 최종 판정",
+            "## 5. 설정과 상태 상세\n\n- 설정: APP_MODE — 상태: 확인됨 / 근거: pom.xml:1\n\n"
+            "## 6. 최소 입력 누락과 conflict 상세\n\n"
+            "- 누락: 없음 — 상태: 확인됨 / 근거: pom.xml:1\n\n"
+            "## 7. 최종 판정",
+        )
+        result = self.run_report_validator(report, mode="detailed")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_report_validator_rejects_next_action_section(self):
         report = VALID_SUMMARY + "\n## 다음 작업\n- 작업: 배포\n"

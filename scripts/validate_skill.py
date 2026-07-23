@@ -28,10 +28,12 @@ REQUIRED_TERMS = [
     "준비됨", "추가 정보 필요", "진행 불가",
     "dependency matrix", "dependency graph",
     "A missing Dockerfile is a finding, not an analysis failure",
-    "Do not generate Kubernetes manifests",
+    "Kubernetes manifest",
+    "read-only repository analyst", "Repository 콘텐츠",
+    "검색(scope=",
     "실행 위치", "적용 시점",
-    "구성 요소별 배포 브리핑", "Kubernetes 최소 초안", "최소 입력 누락", "키: 값",
-    "Default output mode: summary", "Interview-First Intake",
+    "구성 요소별 배포 브리핑", "Kubernetes 최소 설계 입력", "최소 입력 누락", "키: 값",
+    "Default output mode: summary", "Target Resolution Gate",
     "Repository URL", "Local path",
 ]
 

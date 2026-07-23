@@ -1,6 +1,4 @@
 interface:
   display_name: "Kubernetes 저장소 분석기"
-  short_description: "Kubernetes 이관 전 저장소를 분석합니다"
-  default_prompt: "대상이 없으면 먼저 Repository URL 또는 Local path를 질문합니다. 대상이 정해지면 summary 모드로 Kubernetes 이관 준비 상태를 분석합니다. 실행 위치와 설정 적용 시점을 포함하고, manifest를 만들거나 인증 정보를 요청하지 않습니다."
-policy:
-  allow_implicit_invocation: true
+  short_description: "근거 기반으로 Kubernetes 이관 준비 상태를 분석합니다"
+  default_prompt: "Use $analyze-repo-for-kubernetes to analyze this repository in summary mode with source evidence, missing design inputs, and no deployment artifact generation."

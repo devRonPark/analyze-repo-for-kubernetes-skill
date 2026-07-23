@@ -1,6 +1,6 @@
 # Dependency Analysis
 
-Represent dependencies as directed relationships from a logical source component to a target.
+Represent each dependency as a directed relationship from a logical source component to a target component or external system.
 
 ## Required Relationship Fields
 
@@ -12,7 +12,7 @@ Represent dependencies as directed relationships from a logical source component
 - required or optional
 - build-time or runtime
 - 실행 위치
-- evidence status and file locations
+- evidence status and evidence
 
 ## 실행 위치 값
 
@@ -28,12 +28,20 @@ Use one of:
 - 외부 시스템
 - 미확인
 
-The logical source and execution locus can differ. A static frontend component may logically depend on an API, while the actual network caller is the user's browser rather than the Nginx Pod.
+The logical source and execution locus can differ. A static frontend may logically depend on an API while the actual network caller is the user's browser rather than the frontend Pod.
 
 ## Dependency Types
 
-Examples include HTTP, gRPC, SQL, message queue, cache, SMTP, object storage, filesystem, package import, generated client, and build artifact.
+Examples include HTTP, gRPC, SQL, message queue, cache, SMTP, object storage, filesystem, package import, generated client and build artifact.
 
-## Required Output
+## Evidence Rules
 
-Produce both a dependency matrix and a text dependency graph. The two representations must agree. Separate build-time relationships from runtime relationships and do not treat package declarations alone as proof of runtime communication.
+- Do not treat a dependency declaration alone as proof of runtime communication.
+- Use `file:line` for existing relationships.
+- Use `검색(scope=..., pattern=..., result=없음)` only for verified absence.
+- Preserve conflicting endpoints, ports or protocols with both sources.
+
+## Required Output by Mode
+
+- **summary:** Produce a concise relationship card or text dependency graph.
+- **detailed:** Produce both a dependency matrix and a text dependency graph. Make the two representations agree and separate build-time from runtime relationships.

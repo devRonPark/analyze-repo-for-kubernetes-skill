@@ -20,7 +20,7 @@ DETAILED_SECTIONS = [
     "## 3. 구성 요소별 배포 브리핑",
     "## 4. 구성 요소 관계",
     "## 5. 설정과 상태 상세",
-    "## 6. 최소 입력 누락 상세",
+    "## 6. 최소 입력 누락과 conflict 상세",
     "## 7. 최종 판정",
 ]
 
@@ -33,7 +33,10 @@ FIXTURES = {
 }
 
 FILE_LINE_REFERENCE = re.compile(
-    r"(?<![A-Za-z0-9_./-])(?:[A-Za-z0-9_.@+-]+/)*[A-Za-z0-9_.@+-]+:\d+(?:-\d+)?(?=$|[\s,;|)\]])"
+    r"(?<![A-Za-z0-9_./-])(?:[A-Za-z0-9_.@+-]+/)*[A-Za-z0-9_.@+-]+:\d+(?:-\d+)?(?=$|[`\s,;|)\]])"
+)
+ABSENCE_REFERENCE = re.compile(
+    r"검색\(scope=.+,\s*pattern=.+,\s*result=없음\)"
 )
 COMPONENT_HEADING = re.compile(r"^### 구성 요소:\s*\S+", re.MULTILINE)
 PROPERTY_LINE = re.compile(
@@ -49,8 +52,8 @@ def detect_mode(text: str) -> str | None:
     return None
 
 
-def has_file_line_reference(value: str) -> bool:
-    return bool(FILE_LINE_REFERENCE.search(value))
+def has_valid_evidence(value: str) -> bool:
+    return bool(FILE_LINE_REFERENCE.search(value) or ABSENCE_REFERENCE.search(value))
 
 
 def evidence_table_errors(text: str) -> list[str]:
@@ -80,8 +83,8 @@ def evidence_table_errors(text: str) -> list[str]:
             row = [cell.strip() for cell in lines[index].strip().strip("|").split("|")]
             if any(cell for position, cell in enumerate(row) if position != evidence_column):
                 evidence = row[evidence_column] if evidence_column < len(row) else ""
-                if not has_file_line_reference(evidence):
-                    errors.append(f"{index + 1}행 근거 셀에 file:line 근거가 없습니다")
+                if not has_valid_evidence(evidence):
+                    errors.append(f"{index + 1}행 근거 셀에 file:line 또는 검색(...) 근거가 없습니다")
             index += 1
     return errors
 
@@ -110,7 +113,7 @@ def component_briefing_errors(text: str) -> list[str]:
         "#### 빌드와 기동",
         "#### 네트워크와 상태 확인",
         "#### 설정과 상태",
-        "#### Kubernetes 최소 초안",
+        "#### Kubernetes 최소 설계 입력",
         "#### 최소 입력 누락",
     ]
     required_properties = [
@@ -119,7 +122,10 @@ def component_briefing_errors(text: str) -> list[str]:
         "프로토콜:", "수신 포트:", "상태 확인:",
         "설정:", "Secret:", "저장소:", "볼륨 또는 세션:", "적용 시점:",
     ]
-    minimum_fields = ["workload.kind:", "metadata.name:", "image:", "command:", "args:", "containerPort:"]
+    minimum_fields = [
+        "workload.kind:", "metadata.name:", "image:", "command:", "args:",
+        "containerPort:", "Service:", "Ingress:",
+    ]
 
     for heading, card in cards:
         for category in categories:
@@ -129,7 +135,7 @@ def component_briefing_errors(text: str) -> list[str]:
             if property_name not in card:
                 errors.append(f"{heading}에 필수 속성이 없습니다: {property_name[:-1]}")
 
-        minimum_start = card.find("#### Kubernetes 최소 초안")
+        minimum_start = card.find("#### Kubernetes 최소 설계 입력")
         missing_start = card.find("#### 최소 입력 누락")
         minimum = card[minimum_start:missing_start] if minimum_start != -1 and missing_start != -1 else ""
         missing = card[missing_start:] if missing_start != -1 else ""
@@ -144,8 +150,8 @@ def component_briefing_errors(text: str) -> list[str]:
             if not match:
                 errors.append(f"{heading}의 속성이 key: value — 상태 / 근거 형식이 아닙니다: {line}")
                 continue
-            if not has_file_line_reference(match.group(2)):
-                errors.append(f"{heading}의 속성 근거에 file:line이 없습니다: {line}")
+            if not has_valid_evidence(match.group(2)):
+                errors.append(f"{heading}의 속성 근거에 file:line 또는 검색(...)이 없습니다: {line}")
     return errors
 
 
@@ -154,6 +160,15 @@ def disallowed_section_errors(text: str) -> list[str]:
     for label in ["## 다음 작업", "다음 인계:"]:
         if label in text:
             errors.append(f"출력하면 안 되는 작업 계획 항목이 있습니다: {label}")
+    return errors
+
+
+def mode_specific_errors(text: str, mode: str | None) -> list[str]:
+    errors: list[str] = []
+    if mode == "detailed":
+        for heading in ["### Dependency matrix", "### Text dependency graph"]:
+            if heading not in text:
+                errors.append(f"detailed 모드에 필수 관계 표현이 없습니다: {heading[4:]}")
     return errors
 
 
@@ -182,14 +197,21 @@ def main() -> int:
     for section in required_sections:
         if section not in text:
             errors.append(f"섹션이 없습니다: {section}")
-    if not any(verdict in text for verdict in ["판정: 준비됨", "판정: 추가 정보 필요", "판정: 진행 불가"]):
+    verdicts = [
+        verdict for verdict in ["판정: 준비됨", "판정: 추가 정보 필요", "판정: 진행 불가"]
+        if verdict in text
+    ]
+    if not verdicts:
         errors.append("명시적인 최종 판정이 없습니다")
-    if not has_file_line_reference(text):
-        errors.append("repository-relative file:line 근거를 찾을 수 없습니다")
+    elif len(verdicts) > 1:
+        errors.append("최종 판정은 정확히 하나여야 합니다")
+    if not has_valid_evidence(text):
+        errors.append("file:line 또는 검색(...) 근거를 찾을 수 없습니다")
 
     errors.extend(evidence_table_errors(text))
     errors.extend(component_briefing_errors(text))
     errors.extend(disallowed_section_errors(text))
+    errors.extend(mode_specific_errors(text, mode))
     for field in ["실행 위치", "적용 시점"]:
         if field not in text:
             errors.append(f"필수 필드가 없습니다: {field}")
