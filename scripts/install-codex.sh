@@ -9,5 +9,5 @@ mkdir -p "$TARGET_ROOT"
 rm -rf "$TARGET_DIR"
 cp -R "$SOURCE_DIR" "$TARGET_DIR"
 
-echo "Installed: $TARGET_DIR"
-echo "Restart Codex if the skill does not appear automatically."
+echo "설치 완료: $TARGET_DIR"
+echo "스킬이 자동으로 표시되지 않으면 Codex를 다시 시작하세요."

@@ -46,15 +46,15 @@ def detect_mode(text: str) -> str | None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate a generated Kubernetes migration report.")
-    parser.add_argument("report", help="Generated Markdown report")
+    parser = argparse.ArgumentParser(description="생성된 Kubernetes 이관 보고서를 검증합니다.")
+    parser.add_argument("report", help="생성된 Markdown 보고서")
     parser.add_argument("--mode", choices=["auto", "summary", "detailed"], default="auto")
-    parser.add_argument("--fixture", choices=sorted(FIXTURES), help="Apply fixture-specific checks")
+    parser.add_argument("--fixture", choices=sorted(FIXTURES), help="fixture별 검사를 적용합니다")
     args = parser.parse_args()
 
     path = Path(args.report)
     if not path.is_file():
-        print(f"FAIL: report not found: {path}")
+        print(f"실패: 보고서를 찾을 수 없습니다: {path}")
         return 1
 
     text = path.read_text(encoding="utf-8")
@@ -63,36 +63,36 @@ def main() -> int:
     mode = detected if args.mode == "auto" else args.mode
 
     if mode is None:
-        errors.append("unable to detect report mode from title")
+        errors.append("제목에서 보고서 모드를 감지할 수 없습니다")
     elif detected is not None and args.mode != "auto" and detected != args.mode:
-        errors.append(f"report title indicates {detected} mode, not {args.mode}")
+        errors.append(f"보고서 제목은 {detected} 모드를 가리키지만 요청 모드는 {args.mode}입니다")
 
     required_sections = SUMMARY_SECTIONS if mode == "summary" else DETAILED_SECTIONS
     for section in required_sections:
         if section not in text:
-            errors.append(f"missing section: {section}")
+            errors.append(f"섹션이 없습니다: {section}")
 
     if not any(verdict in text for verdict in ["Verdict: Ready", "Verdict: Needs Input", "Verdict: Blocked"]):
-        errors.append("missing explicit final verdict")
+        errors.append("명시적인 최종 판정이 없습니다")
 
     if not any(status in text for status in ["Confirmed", "Inferred", "Unknown", "Conflicting"]):
-        errors.append("no evidence confidence status found")
+        errors.append("근거 신뢰도 상태를 찾을 수 없습니다")
 
     for field in ["Execution Locus", "Application Phase"]:
         if field not in text:
-            errors.append(f"missing required field: {field}")
+            errors.append(f"필수 필드가 없습니다: {field}")
 
     if args.fixture:
         for term in FIXTURES[args.fixture]:
             if term not in text:
-                errors.append(f"fixture expectation not found: {term}")
+                errors.append(f"fixture 기대값을 찾을 수 없습니다: {term}")
 
     if errors:
         for error in errors:
-            print(f"FAIL: {error}")
+            print(f"실패: {error}")
         return 1
 
-    print(f"PASS: report contains the required {mode} assessment structure.")
+    print(f"성공: 보고서에 필요한 {mode} 평가 구조가 포함되어 있습니다.")
     return 0
 
 
