@@ -1,0 +1,6 @@
+interface:
+  display_name: "Kubernetes Repository Analyzer"
+  short_description: "Analyze repositories before Kubernetes migration"
+  default_prompt: "Start with Interview-First Intake when no target is supplied: ask for a Repository URL or Local path. Then analyze it for Kubernetes migration readiness in summary mode. Include execution locus and configuration application phase. Do not generate manifests or request credential values."
+policy:
+  allow_implicit_invocation: true
