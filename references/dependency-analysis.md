@@ -9,7 +9,9 @@ Represent each dependency as a directed relationship from a logical source compo
 - dependency type
 - protocol or mechanism
 - endpoint or configuration name when known
-- required or optional
+- 기능 실행에 필요한지
+- 확인된 저장소 기동 정의에서 사용되는지
+- 공급 또는 관리 경계(저장소에 배포 정의 있음, 외부 관리로 참조, 미확인)
 - build-time or runtime
 - 실행 위치
 - evidence status and evidence

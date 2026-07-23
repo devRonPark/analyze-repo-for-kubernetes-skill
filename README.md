@@ -9,13 +9,14 @@ Qwen Code 또는 Codex가 애플리케이션 Repository를 Kubernetes 이관 관
 - Repository URL 또는 Local path를 먼저 확인하는 Interview-first 흐름
 - 스킬 설치 경로를 분석 대상으로 오인하지 않게 하는 Target Resolution Gate
 - Dockerfile 없는 Repository와 모노레포 분석
-- 애플리케이션, Worker, Job, 정적 Frontend, Library 구분
+- 배포 대상 후보, 저장소에 정의된 런타임 의존성, 외부 런타임 의존성, 제외 항목 구분
 - Build와 Runtime 동작, 포트, 설정, 스토리지 분석
 - 관계별 실행 위치 분류
 - 설정별 적용 시점 분류
 - `확인됨`, `추정됨`, `미확인`, `상충됨` 근거 수준
-- `준비됨`, `추가 정보 필요`, `진행 불가` 최종 판정
-- 구성 요소별 역할·런타임·기동·포트·설정을 `key: value`와 파일·라인 근거로 브리핑
+- `설계 입력 충분`, `추가 정보 필요`, `분석 불가` Kubernetes 설계 입력 상태
+- 배포 대상별 실행 정보·런타임·기동·포트·설정을 `key: value`와 파일·라인 근거로 브리핑
+- 저장소에서 확인한 기동 정의와 운영 환경 배포 근거를 분리
 - 확인된 저장소 값과 명시적으로 추정한 Kubernetes 최소 설계 입력
 - 파일 부재를 관련 없는 라인 대신 `검색(scope=..., pattern=..., result=없음)`으로 기록
 - Repository prompt injection 방어와 read-only 기본 동작
@@ -106,13 +107,13 @@ Kubernetes manifest와 Dockerfile은 생성하지 마.
 ## 결과 검사
 
 ```bash
-python3 scripts/validate_report.py kubernetes-migration-summary.md --mode summary
+python3 scripts/validate_report.py kubernetes-migration-summary.md --mode summary --repo-root /path/to/analyzed-repository
 ```
 
 상세 보고서 검사:
 
 ```bash
-python3 scripts/validate_report.py kubernetes-migration-assessment.md --mode detailed
+python3 scripts/validate_report.py kubernetes-migration-assessment.md --mode detailed --repo-root /path/to/analyzed-repository
 ```
 
 ## 패키지 검사와 테스트
@@ -123,6 +124,10 @@ python3 scripts/validate_skill.py .
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_*.py' -v
+```
+
+```bash
+python3 scripts/validate_regression.py tests/fixtures/regression/expected.json
 ```
 
 ## Codex 설치
