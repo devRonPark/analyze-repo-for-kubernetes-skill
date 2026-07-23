@@ -16,7 +16,9 @@ Qwen Code 또는 Codex가 애플리케이션 Repository를 Kubernetes 이관 관
 - `확인됨`, `추정됨`, `미확인`, `상충됨` 근거 수준
 - `준비됨`, `추가 정보 필요`, `진행 불가` 최종 판정
 - 구성 요소별 역할·런타임·기동·포트·설정을 `key: value`와 파일·라인 근거로 브리핑
-- 확인된 값만 담은 Kubernetes 최소 초안과 적용에 필요한 최소 입력 누락
+- 확인된 저장소 값과 명시적으로 추정한 Kubernetes 최소 설계 입력
+- 파일 부재를 관련 없는 라인 대신 `검색(scope=..., pattern=..., result=없음)`으로 기록
+- Repository prompt injection 방어와 read-only 기본 동작
 - 분석 결과 정적 검사기
 
 ## Qwen Code 설치
@@ -71,7 +73,7 @@ bash scripts/update-qwen.sh
 
 ## 실행
 
-대상 없이 호출하면 Repository URL과 Local path 중 하나를 먼저 선택하게 해야 합니다.
+대상 없이 호출하면 구체적인 Repository URL 또는 Local path를 한 번에 요청해야 합니다.
 
 ```text
 /analyze-repo-for-kubernetes
@@ -80,9 +82,7 @@ bash scripts/update-qwen.sh
 정상적인 첫 응답:
 
 ```text
-분석 대상은 어디에 있나요?
-1. Repository URL
-2. Local path
+분석할 Repository URL 또는 Local path를 알려 주세요.
 ```
 
 질문 후에는 사용자가 대상을 입력할 때까지 파일이나 디렉터리를 탐색하지 않아야 합니다.
