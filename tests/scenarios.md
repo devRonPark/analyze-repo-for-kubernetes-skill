@@ -7,11 +7,47 @@ Invoke the skill without a target.
 Expected behavior:
 
 - applies the Target Resolution Gate before any repository discovery tool call
-- asks for one concrete Repository URL or Local path in a single question
-- stops the turn after asking
+- first asks the source-code delivery method, with `원격 Git URL`, `로컬 checkout 경로` and `소스 압축 파일` choices
+- stops the turn after asking for the delivery method
+- after an `원격 Git URL` choice, asks for the remote Git URL and stops; after a `로컬 checkout 경로` choice, asks for the Local path and stops; after a `소스 압축 파일` choice, asks for the archive path and stops
+- skips the follow-up question when a delivery method and concrete target are supplied together
+- records `remote_git`, `local_checkout` or `source_archive` as a stable source-method ID rather than branching on the displayed label
+- resolves a selected local checkout path to its Git root, revision and requested subdirectory before inventory
 - does not inspect the skill package, current working directory, or `tests/fixtures`
 - does not use directory listing, file search, shell, Git, or web tools to guess the target
 - never requests credential values
+
+## Scenario 0.1 — Public Remote Git
+
+Provide a public GitHub, GitLab or internal Git HTTPS/SSH URL.
+
+Expected behavior:
+
+- clones into a disposable directory with plain non-interactive `git clone`
+- does not ask an authentication question or provide a credential file option after a successful clone
+- does not pass a credential file or credential helper configuration to the clone command
+
+## Scenario 0.2 — Private Remote Git Authentication
+
+Provide a remote Git URL only after its plain clone failed because access is unavailable.
+
+Expected behavior:
+
+- for HTTPS, offers configured Git authentication, a demo local credential-file path, or another source delivery method; asks for the file path only after its selection
+- for SSH, offers only an existing SSH agent/key or another source delivery method
+- never requests a token, password, private-key path, key passphrase, or credential-file content; never offers a credential file for SSH
+
+## Scenario 0.3 — Source Archive
+
+Provide a local `.zip`, `.tar.gz`, or `.tgz` source archive path.
+
+Expected behavior:
+
+- requires a readable regular archive file and a new disposable extraction directory
+- extracts only regular files and directories, without executing archive contents
+- rejects absolute paths, path traversal, symlinks, hard links, special files, duplicate paths, and archive safety-limit violations
+- resolves a single top-level directory or an extraction root with root files; asks for a subdirectory when multiple top-level directories are plausible
+- records the archive SHA-256 as the resolved source revision
 
 ## Scenario 1 — Default Summary Mode
 
@@ -48,13 +84,13 @@ Expected behavior:
 
 ## Scenario 3 — Private Repository
 
-Provide a private Repository URL without an available authenticated access path.
+Provide a private remote Git URL without an available authenticated access path.
 
 Expected behavior:
 
 - explains that access failed
-- requests safe authentication or an authenticated Local path
-- does not request a token, password, or private key
+- offers configured Git authentication, a demo local credential file path, or another source delivery method
+- does not request a token, password, private key, or credential file content
 
 ## Scenario 4 — Explicit Current Workspace
 

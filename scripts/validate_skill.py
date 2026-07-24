@@ -12,6 +12,8 @@ REQUIRED = [
     "agents/openai.yaml",
     "references/workflow.md",
     "references/interview-first-intake.md",
+    "references/remote-git-access.md",
+    "references/source-intake-state.md",
     "references/repository-analysis-checklist.md",
     "references/language-discovery-rules.md",
     "references/dependency-analysis.md",
@@ -19,7 +21,13 @@ REQUIRED = [
     "references/configuration-timing.md",
     "assets/migration-assessment-template.md",
     "assets/migration-summary-template.md",
+    "assets/demo-git-credential.example.json",
     "scripts/validate_report.py",
+    "scripts/demo_git_readonly_clone.py",
+    "scripts/source_intake.py",
+    "scripts/plain_remote_git_clone.py",
+    "scripts/remote_git_auth.py",
+    "scripts/source_archive.py",
     "tests/scenarios.md",
 ]
 
@@ -34,7 +42,7 @@ REQUIRED_TERMS = [
     "실행 위치", "적용 시점",
     "배포 대상별 실행 정보", "Kubernetes 최소 설계 입력", "최소 입력 누락", "키: 값",
     "Default output mode: summary", "Target Resolution Gate",
-    "Repository URL", "Local path",
+    "Repository URL", "Local path", "원격 Git URL", "소스 압축 파일", "local credential file",
 ]
 
 

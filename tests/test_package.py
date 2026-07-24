@@ -1,7 +1,11 @@
 from pathlib import Path
 import subprocess
+import sys
+import tarfile
 import tempfile
 import unittest
+import importlib.util
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -218,12 +222,180 @@ class SkillPackageTests(unittest.TestCase):
             "skill installation directory",
             "repository discovery tool call",
             "Stop the turn after asking",
-            "Repository URL",
+            "분석 대상 애플리케이션 소스 코드 제공 방식을 알려주세요.",
+            "원격 Git URL",
+            "로컬 checkout 경로",
+            "소스 압축 파일",
+            "분석할 원격 Git URL을 알려주세요.",
+            "분석할 Local path를 알려주세요.",
+            "분석할 소스 압축 파일의 Local path를 알려주세요.",
+            "Remote Git URL",
             "Local path",
             "directory listing",
             "tests/",
         ]:
             self.assertIn(term, combined)
+
+    def test_demo_credential_file_contract(self):
+        access = (ROOT / "references/remote-git-access.md").read_text(encoding="utf-8")
+        example = (ROOT / "assets/demo-git-credential.example.json").read_text(encoding="utf-8")
+        for term in [
+            "데모용 local credential file 경로 제공",
+            "파일 내용이나 Access Token은 대화에 입력하지 마세요.",
+            "never opens, searches, quotes or reports the file content",
+            "read-only Git request",
+            "read_repository",
+            '"repository_url"',
+            '"access_token"',
+        ]:
+            self.assertIn(term, access + example)
+
+    def test_demo_credential_file_is_scoped_and_private(self):
+        module_path = ROOT / "scripts/demo_git_readonly_clone.py"
+        spec = importlib.util.spec_from_file_location("demo_git_readonly_clone", module_path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as tmp:
+            credential = Path(tmp) / "credential.json"
+            credential.write_text(
+                '{"version": 1, "repository_url": "https://git.example.internal/group/project.git", "username": "readonly", "access_token": "demo-token"}',
+                encoding="utf-8",
+            )
+            credential.chmod(0o600)
+            loaded = module.load_credential(credential, "https://git.example.internal/group/project.git")
+            self.assertEqual(loaded.username, "readonly")
+            with self.assertRaises(module.CredentialError):
+                module.load_credential(credential, "https://git.example.internal/group/other.git")
+
+    def test_source_intake_uses_stable_ids_and_resolves_local_checkout(self):
+        module_path = ROOT / "scripts/source_intake.py"
+        spec = importlib.util.spec_from_file_location("source_intake", module_path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        self.assertEqual(module.select_source_method("local_checkout")["source_method"], "local_checkout")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            nested = root / "services" / "api"
+            nested.mkdir(parents=True)
+            for command in [
+                ["git", "init", str(root)],
+                ["git", "-C", str(root), "config", "user.email", "test@example.invalid"],
+                ["git", "-C", str(root), "config", "user.name", "Test"],
+                ["git", "-C", str(root), "commit", "--allow-empty", "-m", "initial"],
+            ]:
+                result = subprocess.run(command, capture_output=True, text=True, check=False)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            resolved = module.accept_source_value("local_checkout", str(nested))
+            self.assertEqual(resolved["state"], "resolved")
+            self.assertEqual(resolved["source_method"], "local_checkout")
+            self.assertEqual(resolved["resolved_target"], str(root.resolve()))
+            self.assertEqual(resolved["subdirectory"], "services/api")
+            with self.assertRaises(module.IntakeError):
+                module.accept_source_value("local_checkout", str(root / "missing"))
+
+    def test_plain_remote_clone_rejects_embedded_credentials_and_uses_no_credential_option(self):
+        module_path = ROOT / "scripts/plain_remote_git_clone.py"
+        spec = importlib.util.spec_from_file_location("plain_remote_git_clone", module_path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        self.assertEqual(module.validate_remote_url("https://github.com/example/project.git"), "https")
+        self.assertEqual(module.validate_remote_url("git@github.com:example/project.git"), "ssh")
+        with self.assertRaises(module.CloneError):
+            module.validate_remote_url("https://token@github.com/example/project.git")
+        command = module.plain_clone_command("https://github.com/example/project.git", Path("/tmp/disposable-clone"))
+        self.assertEqual(command[:3], ["git", "clone", "--quiet"])
+        self.assertNotIn("credential.helper", " ".join(command))
+        self.assertNotIn("credential-file", " ".join(command))
+
+    def test_remote_git_auth_branches_by_protocol_without_collecting_secrets(self):
+        module_path = ROOT / "scripts/remote_git_auth.py"
+        spec = importlib.util.spec_from_file_location("remote_git_auth", module_path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        https = module.authentication_options("https://git.example.internal/group/project.git")
+        self.assertEqual(https["remote_scheme"], "https")
+        self.assertEqual(
+            [item["id"] for item in https["auth_methods"]],
+            ["existing_git_auth", "demo_credential_file", "alternate_source"],
+        )
+        self.assertEqual(
+            module.accept_authentication_method(
+                "https://git.example.internal/group/project.git", "demo_credential_file"
+            )["state"],
+            "awaiting_credential_file",
+        )
+
+        ssh = module.authentication_options("git@git.example.internal:group/project.git")
+        self.assertEqual(ssh["remote_scheme"], "ssh")
+        self.assertTrue(ssh["next_prompt"].startswith("SSH 원격 Git 저장소"))
+        self.assertEqual([item["id"] for item in ssh["auth_methods"]], ["ssh_agent", "alternate_source"])
+        with self.assertRaises(module.AuthenticationError):
+            module.accept_authentication_method("ssh://git@git.example.internal/group/project.git", "demo_credential_file")
+        self.assertEqual(
+            module.accept_authentication_method("ssh://git@git.example.internal/group/project.git", "ssh_agent"),
+            {
+                "state": "retry_plain_clone",
+                "remote_scheme": "ssh",
+                "auth_method": "ssh_agent",
+                "next_action": "plain_remote_git_clone",
+            },
+        )
+
+    def test_source_archive_extracts_safe_content_and_rejects_unsafe_members(self):
+        module_path = ROOT / "scripts/source_archive.py"
+        spec = importlib.util.spec_from_file_location("source_archive", module_path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive = root / "source.zip"
+            with zipfile.ZipFile(archive, "w") as zipped:
+                zipped.writestr("service/app.py", "print('safe')\n")
+            resolved = module.extract_source_archive(archive, root / "extracted")
+            self.assertEqual(resolved["state"], "resolved")
+            self.assertEqual(resolved["subdirectory"], "service")
+            self.assertTrue((Path(resolved["resolved_target"]) / "app.py").is_file())
+            self.assertTrue(resolved["revision"].startswith("archive-sha256:"))
+
+            multiple = root / "multiple.zip"
+            with zipfile.ZipFile(multiple, "w") as zipped:
+                zipped.writestr("api/app.py", "")
+                zipped.writestr("web/app.py", "")
+            ambiguous = module.extract_source_archive(multiple, root / "multiple-extracted")
+            self.assertEqual(ambiguous["state"], "awaiting_subdirectory")
+            self.assertEqual(ambiguous["candidate_subdirectories"], ["api", "web"])
+
+            traversal = root / "traversal.zip"
+            with zipfile.ZipFile(traversal, "w") as zipped:
+                zipped.writestr("../outside.txt", "unsafe")
+            with self.assertRaises(module.ArchiveError):
+                module.extract_source_archive(traversal, root / "traversal-extracted")
+
+            link = root / "link.tar.gz"
+            with tarfile.open(link, "w:gz") as tarred:
+                member = tarfile.TarInfo("service/link")
+                member.type = tarfile.SYMTYPE
+                member.linkname = "../../outside"
+                tarred.addfile(member)
+            with self.assertRaises(module.ArchiveError):
+                module.extract_source_archive(link, root / "link-extracted")
 
     def test_output_contract(self):
         text = "\n".join(
