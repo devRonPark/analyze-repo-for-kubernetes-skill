@@ -14,30 +14,36 @@ Resolve target candidates in this order:
 
 Slash Command Input wins when it and the natural-language request contain different Targets. A natural-language GitHub URL or Git URL is already a concrete target and must not be requested again.
 
-When the target is absent, ask exactly one AskUserQuestion using Codex `request_user_input` when available:
+If the user explicitly says “현재 저장소” or “현재 workspace,” resolve the current repository root. Otherwise collect the source-code delivery method and then its concrete value. For remote Git authentication and archive handling, read [remote-git-access.md](remote-git-access.md).
+
+Record `remote_git`, `local_checkout` or `source_archive` as the source-method state; never use a translated or display label as the branch key. For local checkout resolution, read [source-intake-state.md](source-intake-state.md).
+
+When both the delivery method and target are absent, ask exactly one AskUserQuestion using Codex `request_user_input` when available:
 
 ```text
-소스를 어떻게 제공하시겠어요?
-- Repository URL
-- Local directory path
-- Source archive
+분석 대상 애플리케이션 소스 코드 제공 방식을 알려주세요.
+- 원격 Git URL
+- 로컬 checkout 경로
+- 소스 압축 파일
 ```
 
 Stop the turn after asking. Do not ask for the concrete target value in the same turn.
 
 On the next turn, ask exactly one follow-up AskUserQuestion according to the selected source method:
 
-- Repository URL: `분석할 GitHub 또는 Git repository URL을 입력해 주세요.`
-- Local directory path: `분석할 local directory path를 입력해 주세요.`
-- Source archive: `분석할 ZIP, tar, tar.gz 또는 tgz archive path를 입력해 주세요.`
+- `remote_git` / 원격 Git URL: `분석할 원격 Git URL을 알려주세요.`
+- `local_checkout` / 로컬 checkout 경로: `분석할 Local path를 알려주세요.`
+- `source_archive` / 소스 압축 파일: `분석할 소스 압축 파일의 Local path를 알려주세요.`
 
-The first source-method question and second target-value question never occur in the same turn. Do not use directory listing, file search, shell, Git or web tools to guess the target while either question is unresolved.
+The first source-method question and second target-value question never occur in the same turn. If the user supplies a delivery method and concrete value together, skip the follow-up question. Do not use directory listing, file search, shell, Git or web tools to guess the target while either question is unresolved.
 
-## Repository URL
+Do not use directory listing, file search, shell, Git or web tools to guess the target before a concrete URL, Local path or archive path is supplied.
+
+## Remote Git URL
 
 Use the default branch unless the user supplied a branch, tag, commit or pull request. Continue when read-only access succeeds.
 
-For a private repository, use only an existing authenticated connector, CLI session, credential helper, SSH agent or authenticated local checkout. Never ask for a password, token, private key or other credential value. If access fails, identify the failed access method and request safe authentication or an authenticated local checkout.
+For a private repository, use only an existing authenticated connector, CLI session, credential helper, SSH agent, demo local credential file or authenticated local checkout. Never ask for a password, token, private key or credential file content. If access fails, identify the failed access method and use the authentication decision flow in [remote-git-access.md](remote-git-access.md).
 
 ## Local Path
 
@@ -45,7 +51,7 @@ Resolve relative paths and verify that the path exists and is readable. Never re
 
 ## Source Archive
 
-Accept only ZIP, tar, tar.gz or tgz source archives supplied as an attachment or a concrete local archive path. Open the archive read-only. Do not execute archive content and do not follow archive entries that resolve outside the archive extraction root.
+Accept only ZIP, tar, tar.gz or tgz source archives supplied as an attachment or a concrete local archive path. Open the archive read-only. Do not execute archive content and do not follow archive entries that resolve outside the archive extraction root. Use the extraction rules in [remote-git-access.md](remote-git-access.md). Never treat the skill package or an arbitrary archive sibling directory as the analysis target.
 
 ## Resolved Scope
 

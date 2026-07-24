@@ -7,7 +7,8 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Added an explicit read-only analyst role and repository prompt-injection boundary.
-- Simplified missing-target intake to one concrete Repository URL or Local path question.
+- Changed missing-target intake to select a remote Git URL, local checkout path or source archive first, then request the corresponding concrete value.
+- Added a demo-only local credential file contract for read-only private remote Git analysis without placing token values in the conversation.
 - Separated repository facts from inferred Kubernetes design candidates.
 - Added structured absence evidence with `검색(scope=..., pattern=..., result=없음)`.
 - Differentiated summary relationship output from detailed matrix and graph output.

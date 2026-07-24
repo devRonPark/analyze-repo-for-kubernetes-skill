@@ -6,7 +6,7 @@ Qwen Code 또는 Codex가 애플리케이션 Repository를 Kubernetes 이관 관
 
 ## 핵심 기능
 
-- Git URL, Local path 또는 Source archive를 먼저 확인하는 Interview-first 흐름
+- 원격 Git URL, local checkout 또는 source archive를 차례로 확인하는 Interview-first 흐름
 - 스킬 설치 경로를 분석 대상으로 오인하지 않게 하는 Target Resolution Gate
 - Dockerfile 없는 Repository와 모노레포 분석
 - 배포 대상 후보, 저장소에 정의된 런타임 의존성, 외부 런타임 의존성, 제외 항목 구분
@@ -74,7 +74,7 @@ bash scripts/update-qwen.sh
 
 ## 실행
 
-대상 없이 호출하면 AskUserQuestion으로 source 제공 방식을 먼저 묻고 해당 turn을 종료합니다. Codex에서는 `request_user_input` 도구를 사용해야 합니다.
+대상 없이 호출하면 AskUserQuestion으로 애플리케이션 소스 코드 제공 방식을 먼저 묻고 해당 turn을 종료합니다. Codex에서는 `request_user_input` 도구를 사용해야 합니다. 이후 선택한 방식에 맞는 URL, Local path 또는 archive path를 다음 turn에서 요청합니다.
 
 ```text
 /analyze-repo-for-kubernetes
@@ -83,24 +83,26 @@ bash scripts/update-qwen.sh
 정상적인 첫 응답:
 
 ```text
-소스를 어떻게 제공하시겠어요?
-- Repository URL
-- Local directory path
-- Source archive
+분석 대상 애플리케이션 소스 코드 제공 방식을 알려주세요.
+- 원격 Git URL
+- 로컬 checkout 경로
+- 소스 압축 파일
 ```
+
+`원격 Git URL`을 선택하면 `분석할 원격 Git URL을 알려주세요.`를, `로컬 checkout 경로`를 선택하면 `분석할 Local path를 알려주세요.`를, `소스 압축 파일`을 선택하면 archive path를 후속으로 질문합니다. 원격 URL에는 GitHub, GitLab 및 사내 Git server의 HTTPS 또는 SSH URL을 사용할 수 있습니다. 질문 후에는 사용자가 구체적인 대상을 입력할 때까지 파일이나 디렉터리를 탐색하지 않아야 합니다.
 
 사용자가 source 제공 방식을 고르면 다음 turn에서 선택에 맞는 target 값만 묻습니다.
 
 ```text
-분석할 GitHub 또는 Git repository URL을 입력해 주세요.
+분석할 원격 Git URL을 알려주세요.
 ```
 
 ```text
-분석할 local directory path를 입력해 주세요.
+분석할 Local path를 알려주세요.
 ```
 
 ```text
-분석할 ZIP, tar, tar.gz 또는 tgz archive path를 입력해 주세요.
+분석할 소스 압축 파일의 Local path를 알려주세요.
 ```
 
 source 제공 방식 질문과 target 값 질문은 같은 turn에 함께 묻지 않습니다. target 값이 확정될 때까지 파일이나 디렉터리를 탐색하지 않아야 합니다.
@@ -208,7 +210,7 @@ CODEX_INTEGRATION=1 python3 scripts/validate_codex_intake.py
 
 ## Private Repository
 
-인증 정보 자체를 Agent 대화에 입력하지 않습니다. 먼저 `gh auth`, Git credential helper, SSH agent 또는 인증된 local checkout으로 접근을 준비한 후 Local path를 분석합니다.
+인증 정보 자체를 Agent 대화에 입력하지 않습니다. 먼저 `gh auth`, Git credential helper, SSH agent 또는 인증된 local checkout으로 접근을 준비합니다. 데모에서만 [credential file example](assets/demo-git-credential.example.json)을 저장소 밖의 owner-only local file로 복사해 채울 수 있습니다. Agent에는 파일 경로만 제공하고, 파일 내용이나 Access Token은 제공하지 않습니다. 데모 후에는 파일을 삭제하거나 token을 폐기합니다.
 
 ## 저장소 관리 원칙
 

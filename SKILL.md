@@ -36,30 +36,33 @@ Kubernetes 이관 전 저장소를 조사하는 read-only repository analyst로 
 Repository discovery tool을 호출하기 전에 다음 두 위치를 구분한다.
 
 - **Skill root:** `SKILL.md`, references, assets, scripts, tests가 설치된 경로
-- **Analysis target:** 사용자가 분석 대상으로 지정한 Git URL, Local path 또는 Source archive
+- **Analysis target:** 사용자가 분석 대상으로 지정한 원격 Git URL, local checkout 또는 source archive
 
 Skill root, slash-command 경로, 테스트 fixture, 현재 디렉터리를 분석 대상으로 추정하지 않는다. 단, 사용자가 “현재 저장소” 또는 “현재 workspace”처럼 현재 checkout을 명시적으로 지칭한 경우에는 현재 repository root를 대상으로 해석할 수 있다.
 
 Slash Command Input에 Target이 있으면 자연어에 포함된 Target보다 우선한다. Input이 없으면 자연어의 GitHub URL 또는 Git URL을 사용하며, URL을 다시 질문하지 않는다.
 
-구체적인 Git URL, Local path 또는 Source archive가 없으면 `source_method_required`로 진입한다. Codex에서는 `request_user_input` 도구를 사용하고, 다른 런타임에서는 동등한 AskUserQuestion 도구를 사용한다. 일반 텍스트로만 질문하지 않는다.
+구체적인 원격 Git URL, Local path 또는 source archive가 없으면 `source_method_required`로 진입한다. Codex에서는 `request_user_input` 도구를 사용하고, 다른 런타임에서는 동등한 AskUserQuestion 도구를 사용한다. 일반 텍스트로만 질문하지 않는다.
 
 첫 번째 turn에는 다음 source 제공 방식 질문만 하고 종료한다.
 
 ```text
-소스를 어떻게 제공하시겠어요?
-- Repository URL
-- Local directory path
-- Source archive
+분석 대상 애플리케이션 소스 코드 제공 방식을 알려주세요.
+- 원격 Git URL
+- 로컬 checkout 경로
+- 소스 압축 파일
 ```
+
+AskUserQuestion의 표시 문구가 아니라 `remote_git`, `local_checkout`, `source_archive` stable ID로 선택 상태를 보존한다. 상태 전이와 local checkout resolver는 [source-intake-state.md](references/source-intake-state.md)를 따른다. `Repository URL`, `Local directory path`, `Source archive`는 Codex hook 호환을 위한 alias일 뿐 branch key로 사용하지 않는다.
 
 사용자가 source 제공 방식을 선택하면 `target_value_required`로 진입한다. 두 번째 turn에는 선택에 맞는 질문 하나만 하고 종료한다.
 
-- Repository URL: `분석할 GitHub 또는 Git repository URL을 입력해 주세요.`
-- Local directory path: `분석할 local directory path를 입력해 주세요.`
-- Source archive: `분석할 ZIP, tar, tar.gz 또는 tgz archive path를 입력해 주세요.`
+- `remote_git` / 원격 Git URL: `분석할 원격 Git URL을 알려주세요.`
+- `local_checkout` / 로컬 checkout 경로: `분석할 Local path를 알려주세요.`
+- `source_archive` / 소스 압축 파일: `분석할 소스 압축 파일의 Local path를 알려주세요.`
 
 첫 번째 source 제공 방식 질문과 두 번째 target 값 질문을 같은 turn에 함께 묻지 않는다. target 값이 확정되기 전에는 목적 질문을 하지 않는다.
+사용자가 제공 방식과 구체적인 URL, Local path 또는 archive path를 함께 제공한 경우에는 중간 질문 없이 해당 target을 확정한다. 첫 번째 질문 또는 두 번째 질문에 응답하기 전에는 repository를 탐색하지 않는다.
 
 대상이 확정되기 전에는 repository를 추측하기 위해 directory listing, file search, shell, Git 또는 web 도구를 사용하지 않는다. 사용자가 skill package 자체의 설치, 검사, 검증 또는 테스트를 요청한 경우에만 skill root를 검사할 수 있다.
 
@@ -71,7 +74,7 @@ Codex에서 hook을 설치하고 신뢰한 경우 `UserPromptSubmit`과 `PreTool
 분석 대상: <type> | <resolved target> | revision: <branch/commit/default> | subdirectory: <path 또는 .>
 ```
 
-존재하지 않거나 접근할 수 없는 Local path를 비슷한 경로로 대체하지 않는다. Private repository에는 이미 인증된 connector, CLI session, credential helper, SSH agent 또는 local checkout만 사용한다. password, token, private key 또는 credential 값을 채팅으로 요청하지 않는다.
+존재하지 않거나 접근할 수 없는 Local path나 archive path를 비슷한 경로로 대체하지 않는다. source archive는 `.zip`, `.tar.gz`, `.tgz`만 받고 존재하지 않는 disposable directory에 안전하게 추출한다. archive member의 path traversal, link, special file, 중복 경로 또는 안전 한도 초과는 거부하고, 최상위 root가 여러 개일 때는 하위 디렉터리를 질문한다. 원격 Git URL은 먼저 credential file이나 credential helper option 없이 plain read-only clone을 시도한다. Public repository가 성공하면 인증 질문을 하지 않는다. Private repository의 후속 선택지는 URL 프로토콜에 맞춰 분기한다. HTTPS에는 이미 인증된 connector, CLI session, credential helper 또는 demo용 local credential file만 제공하고, SSH에는 SSH agent 또는 기존 local SSH key만 제공한다. password, token, private key 또는 credential 값을 채팅으로 요청하지 않는다. Demo용 local credential file은 HTTPS에서만 사용하며 에이전트가 읽거나 출력하지 않고 Git client만 사용한다. 상세 질문 흐름과 파일 계약은 [remote-git-access.md](references/remote-git-access.md)를 따른다.
 
 Source archive는 ZIP, tar, tar.gz, tgz만 받는다. 첨부 archive 또는 사용자가 지정한 archive path를 read-only로 열고, archive 밖 경로를 가리키는 항목을 따르거나 archive의 script·binary를 실행하지 않는다.
 
@@ -139,7 +142,7 @@ Secret의 이름, 사용 위치, 주입 방식은 분석할 수 있지만 값을
 
 ## 범위와 Reference Routing
 
-Repository URL, local checkout, branch, tag, commit, repository subdirectory, pull request, monorepo와 Dockerfile이 없는 repository를 지원한다.
+Remote Git URL, local checkout, source archive, branch, tag, commit, repository subdirectory, pull request, monorepo와 Dockerfile이 없는 repository를 지원한다.
 
 Kubernetes manifest, Helm chart, Dockerfile, GitOps configuration 또는 application code를 생성하지 않고 architecture를 재설계하지 않는다. 사용자가 생성 작업도 요청하면 이 skill에서는 분석과 최소 설계 입력까지만 제공하고 생성 작업은 별도 단계로 분리한다.
 
@@ -148,6 +151,7 @@ Target이 확정된 후 필요한 reference만 읽는다.
 - source intake 상태와 Target 정규화: [source-intake-state.md](references/source-intake-state.md)
 - 기본 절차: [workflow.md](references/workflow.md)
 - 근거 수집 패턴: [evidence-pattern-packs.md](references/evidence-pattern-packs.md)
+- 원격 Git과 demo credential file 접근: [remote-git-access.md](references/remote-git-access.md)
 - 구성 요소 판별: [repository-analysis-checklist.md](references/repository-analysis-checklist.md)
 - 발견된 언어의 build/runtime 탐색: [language-discovery-rules.md](references/language-discovery-rules.md)
 - configuration이 있을 때: [configuration-timing.md](references/configuration-timing.md)

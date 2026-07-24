@@ -2,7 +2,7 @@
 
 ## 1. 분석 요청 확정과 정규화
 
-Repository discovery 전에 Target Resolution Gate를 적용한다. Git URL, Local path 또는 Source archive, read-only 접근 방식, revision, 분석 subdirectory를 확정한다. Target이 실행 가능한 상태가 된 뒤에만 사용자 목적을 해석하고 `intent`, `scope`, `focus`, `output_mode`, `provider`, `phase`를 가진 `ResolvedAnalysisRequest`를 만든다.
+Repository discovery 전에 Target Resolution Gate를 적용한다. 원격 Git URL, local checkout 또는 source archive, read-only 접근 방식, revision, 분석 subdirectory를 확정한다. Remote Git authentication 또는 source archive에는 [remote-git-access.md](remote-git-access.md)를 적용한다. Target이 실행 가능한 상태가 된 뒤에만 사용자 목적을 해석하고 `intent`, `scope`, `focus`, `output_mode`, `provider`, `phase`를 가진 `ResolvedAnalysisRequest`를 만든다.
 
 Target이 없으면 source method를 먼저 묻고, 다음 turn에서 그 method에 맞는 target value만 묻는다. 목적이 모호하면 target이 확정된 뒤 context question을 한 번만 묻는다. source-method, target-value and purpose questions never occur in the same turn. Never ask the user to select `summary`, `detailed`, `provider` or `phase`.
 

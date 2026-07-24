@@ -14,10 +14,10 @@ from pathlib import Path
 from typing import Any
 
 SKILL_NAME = "analyze-repo-for-kubernetes"
-SOURCE_METHOD_QUESTION = "소스를 어떻게 제공하시겠어요?"
-REPOSITORY_URL_QUESTION = "분석할 GitHub 또는 Git repository URL을 입력해 주세요."
-LOCAL_PATH_QUESTION = "분석할 local directory path를 입력해 주세요."
-SOURCE_ARCHIVE_QUESTION = "분석할 ZIP, tar, tar.gz 또는 tgz archive path를 입력해 주세요."
+SOURCE_METHOD_QUESTION = "분석 대상 애플리케이션 소스 코드 제공 방식을 알려주세요."
+REPOSITORY_URL_QUESTION = "분석할 원격 Git URL을 알려주세요."
+LOCAL_PATH_QUESTION = "분석할 Local path를 알려주세요."
+SOURCE_ARCHIVE_QUESTION = "분석할 소스 압축 파일의 Local path를 알려주세요."
 TARGET_QUESTION = SOURCE_METHOD_QUESTION
 PURPOSE_QUESTION = "이 분석 결과를 어디에 활용하시나요?"
 DISCOVERY_TOKENS = re.compile(
@@ -25,8 +25,8 @@ DISCOVERY_TOKENS = re.compile(
     re.IGNORECASE,
 )
 SOURCE_METHOD_PATTERNS = (
-    ("repository_url", re.compile(r"(?:Repository URL|GitHub URL|Git URL|repository url|remote repository|원격|저장소 URL)", re.IGNORECASE)),
-    ("local_path", re.compile(r"(?:Local directory path|Local path|local directory|local path|로컬|디렉터리|디렉토리)", re.IGNORECASE)),
+    ("remote_git", re.compile(r"(?:Repository URL|GitHub URL|Git URL|repository url|remote repository|원격|저장소 URL)", re.IGNORECASE)),
+    ("local_checkout", re.compile(r"(?:Local directory path|Local path|local directory|local path|로컬|디렉터리|디렉토리)", re.IGNORECASE)),
     ("source_archive", re.compile(r"(?:Source archive|archive|ZIP|tar\.gz|tgz|압축|아카이브)", re.IGNORECASE)),
 )
 TARGET_PATTERNS = (
@@ -130,9 +130,9 @@ def _source_method(prompt: str) -> str:
 
 
 def _target_value_question(source_method: str) -> str:
-    if source_method == "repository_url":
+    if source_method in {"remote_git", "repository_url"}:
         return REPOSITORY_URL_QUESTION
-    if source_method == "local_path":
+    if source_method in {"local_checkout", "local_path"}:
         return LOCAL_PATH_QUESTION
     if source_method == "source_archive":
         return SOURCE_ARCHIVE_QUESTION

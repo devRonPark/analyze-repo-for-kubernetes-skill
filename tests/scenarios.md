@@ -8,13 +8,16 @@ Expected behavior:
 
 - applies the Target Resolution Gate before any repository discovery tool call
 - enters `source_method_required`
-- asks exactly one AskUserQuestion using `request_user_input` when available: `소스를 어떻게 제공하시겠어요?`
-- offers `Repository URL`, `Local directory path` and `Source archive`
+- asks exactly one AskUserQuestion using `request_user_input` when available: `분석 대상 애플리케이션 소스 코드 제공 방식을 알려주세요.`
+- offers `원격 Git URL`, `로컬 checkout 경로` and `소스 압축 파일`
 - stops the turn after asking the source-method question
-- after the user selects `Repository URL`, enters `target_value_required` and asks `분석할 GitHub 또는 Git repository URL을 입력해 주세요.`
-- after the user selects `Local directory path`, enters `target_value_required` and asks `분석할 local directory path를 입력해 주세요.`
-- after the user selects `Source archive`, enters `target_value_required` and asks `분석할 ZIP, tar, tar.gz 또는 tgz archive path를 입력해 주세요.`
+- after the user selects `원격 Git URL`, enters `target_value_required` and asks `분석할 원격 Git URL을 알려주세요.`
+- after the user selects `로컬 checkout 경로`, enters `target_value_required` and asks `분석할 Local path를 알려주세요.`
+- after the user selects `소스 압축 파일`, enters `target_value_required` and asks `분석할 소스 압축 파일의 Local path를 알려주세요.`
 - the first source-method question and second target-value question never occur in the same turn
+- skips the follow-up question when a delivery method and concrete target are supplied together
+- records `remote_git`, `local_checkout` or `source_archive` as a stable source-method ID rather than branching on the displayed label
+- resolves a selected local checkout path to its Git root, revision and requested subdirectory before inventory
 - does not inspect the skill package, current working directory, or `tests/fixtures`
 - does not use directory listing, file search, shell, Git, or web tools to guess the target
 - never requests credential values
@@ -64,6 +67,38 @@ Expected behavior:
 - explains that a clear purpose skips the context question and an ambiguous purpose receives it once
 - does not ask the user to choose summary, detailed, provider or phase
 
+## Scenario 0.1 — Public Remote Git
+
+Provide a public GitHub, GitLab or internal Git HTTPS/SSH URL.
+
+Expected behavior:
+
+- clones into a disposable directory with plain non-interactive `git clone`
+- does not ask an authentication question or provide a credential file option after a successful clone
+- does not pass a credential file or credential helper configuration to the clone command
+
+## Scenario 0.2 — Private Remote Git Authentication
+
+Provide a remote Git URL only after its plain clone failed because access is unavailable.
+
+Expected behavior:
+
+- for HTTPS, offers configured Git authentication, a demo local credential-file path, or another source delivery method; asks for the file path only after its selection
+- for SSH, offers only an existing SSH agent/key or another source delivery method
+- never requests a token, password, private-key path, key passphrase, or credential-file content; never offers a credential file for SSH
+
+## Scenario 0.3 — Source Archive
+
+Provide a local `.zip`, `.tar.gz`, or `.tgz` source archive path.
+
+Expected behavior:
+
+- requires a readable regular archive file and a new disposable extraction directory
+- extracts only regular files and directories, without executing archive contents
+- rejects absolute paths, path traversal, symlinks, hard links, special files, duplicate paths, and archive safety-limit violations
+- resolves a single top-level directory or an extraction root with root files; asks for a subdirectory when multiple top-level directories are plausible
+- records the archive SHA-256 as the resolved source revision
+
 ## Scenario 1 — Default Summary Mode
 
 Analyze a Dockerfile-free monorepo.
@@ -99,13 +134,13 @@ Expected behavior:
 
 ## Scenario 3 — Private Repository
 
-Provide a private Repository URL without an available authenticated access path.
+Provide a private remote Git URL without an available authenticated access path.
 
 Expected behavior:
 
 - explains that access failed
-- requests safe authentication or an authenticated Local path
-- does not request a token, password, or private key
+- offers configured Git authentication, a demo local credential file path, or another source delivery method
+- does not request a token, password, private key, or credential file content
 
 ## Scenario 4 — Explicit Current Workspace
 
