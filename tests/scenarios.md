@@ -7,8 +7,10 @@ Invoke the skill without a target.
 Expected behavior:
 
 - applies the Target Resolution Gate before any repository discovery tool call
-- asks for one concrete Repository URL or Local path in a single question
-- stops the turn after asking
+- first asks the source-code delivery method, with `원격 Git URL`, `로컬 checkout 경로` and `소스 압축 파일` choices
+- stops the turn after asking for the delivery method
+- after an `원격 Git URL` choice, asks for the remote Git URL and stops; after a `로컬 checkout 경로` choice, asks for the Local path and stops; after a `소스 압축 파일` choice, asks for the archive path and stops
+- skips the follow-up question when a delivery method and concrete target are supplied together
 - does not inspect the skill package, current working directory, or `tests/fixtures`
 - does not use directory listing, file search, shell, Git, or web tools to guess the target
 - never requests credential values
@@ -48,13 +50,13 @@ Expected behavior:
 
 ## Scenario 3 — Private Repository
 
-Provide a private Repository URL without an available authenticated access path.
+Provide a private remote Git URL without an available authenticated access path.
 
 Expected behavior:
 
 - explains that access failed
-- requests safe authentication or an authenticated Local path
-- does not request a token, password, or private key
+- offers configured Git authentication, a demo local credential file path, or another source delivery method
+- does not request a token, password, private key, or credential file content
 
 ## Scenario 4 — Explicit Current Workspace
 

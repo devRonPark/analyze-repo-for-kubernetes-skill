@@ -1,7 +1,9 @@
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
+import importlib.util
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -218,12 +220,53 @@ class SkillPackageTests(unittest.TestCase):
             "skill installation directory",
             "repository discovery tool call",
             "Stop the turn after asking",
-            "Repository URL",
+            "분석 대상 애플리케이션 소스 코드 제공 방식을 알려주세요.",
+            "원격 Git URL",
+            "로컬 checkout 경로",
+            "소스 압축 파일",
+            "분석할 원격 Git URL을 알려주세요.",
+            "분석할 Local path를 알려주세요.",
+            "분석할 소스 압축 파일의 Local path를 알려주세요.",
+            "Remote Git URL",
             "Local path",
             "directory listing",
             "tests/",
         ]:
             self.assertIn(term, combined)
+
+    def test_demo_credential_file_contract(self):
+        access = (ROOT / "references/remote-git-access.md").read_text(encoding="utf-8")
+        example = (ROOT / "assets/demo-git-credential.example.json").read_text(encoding="utf-8")
+        for term in [
+            "데모용 local credential file 경로 제공",
+            "파일 내용이나 Access Token은 대화에 입력하지 마세요.",
+            "never opens, searches, quotes or reports the file content",
+            "read-only Git request",
+            "read_repository",
+            '"repository_url"',
+            '"access_token"',
+        ]:
+            self.assertIn(term, access + example)
+
+    def test_demo_credential_file_is_scoped_and_private(self):
+        module_path = ROOT / "scripts/demo_git_readonly_clone.py"
+        spec = importlib.util.spec_from_file_location("demo_git_readonly_clone", module_path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as tmp:
+            credential = Path(tmp) / "credential.json"
+            credential.write_text(
+                '{"version": 1, "repository_url": "https://git.example.internal/group/project.git", "username": "readonly", "access_token": "demo-token"}',
+                encoding="utf-8",
+            )
+            credential.chmod(0o600)
+            loaded = module.load_credential(credential, "https://git.example.internal/group/project.git")
+            self.assertEqual(loaded.username, "readonly")
+            with self.assertRaises(module.CredentialError):
+                module.load_credential(credential, "https://git.example.internal/group/other.git")
 
     def test_output_contract(self):
         text = "\n".join(

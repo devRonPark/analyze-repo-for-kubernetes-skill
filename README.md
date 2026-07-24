@@ -6,7 +6,7 @@ Qwen Code 또는 Codex가 애플리케이션 Repository를 Kubernetes 이관 관
 
 ## 핵심 기능
 
-- Repository URL 또는 Local path를 먼저 확인하는 Interview-first 흐름
+- 원격 Git URL, local checkout 또는 source archive를 차례로 확인하는 Interview-first 흐름
 - 스킬 설치 경로를 분석 대상으로 오인하지 않게 하는 Target Resolution Gate
 - Dockerfile 없는 Repository와 모노레포 분석
 - 배포 대상 후보, 저장소에 정의된 런타임 의존성, 외부 런타임 의존성, 제외 항목 구분
@@ -74,7 +74,7 @@ bash scripts/update-qwen.sh
 
 ## 실행
 
-대상 없이 호출하면 구체적인 Repository URL 또는 Local path를 한 번에 요청해야 합니다.
+대상 없이 호출하면 먼저 애플리케이션 소스 코드 제공 방식을 선택하게 한 뒤, 선택한 방식에 맞는 URL 또는 Local path를 요청합니다.
 
 ```text
 /analyze-repo-for-kubernetes
@@ -83,10 +83,13 @@ bash scripts/update-qwen.sh
 정상적인 첫 응답:
 
 ```text
-분석할 Repository URL 또는 Local path를 알려 주세요.
+분석 대상 애플리케이션 소스 코드 제공 방식을 알려주세요.
+- 원격 Git URL
+- 로컬 checkout 경로
+- 소스 압축 파일
 ```
 
-질문 후에는 사용자가 대상을 입력할 때까지 파일이나 디렉터리를 탐색하지 않아야 합니다.
+`원격 Git URL`을 선택하면 `분석할 원격 Git URL을 알려주세요.`를, `로컬 checkout 경로`를 선택하면 `분석할 Local path를 알려주세요.`를, `소스 압축 파일`을 선택하면 archive path를 후속으로 질문합니다. 원격 URL에는 GitHub, GitLab 및 사내 Git server의 HTTPS 또는 SSH URL을 사용할 수 있습니다. 질문 후에는 사용자가 구체적인 대상을 입력할 때까지 파일이나 디렉터리를 탐색하지 않아야 합니다.
 
 현재 Repository를 명시적으로 분석하려면 다음처럼 실행합니다.
 
@@ -146,7 +149,7 @@ bash scripts/install-codex.sh
 
 ## Private Repository
 
-인증 정보 자체를 Agent 대화에 입력하지 않습니다. 먼저 `gh auth`, Git credential helper, SSH agent 또는 인증된 local checkout으로 접근을 준비한 후 Local path를 분석합니다.
+인증 정보 자체를 Agent 대화에 입력하지 않습니다. 먼저 `gh auth`, Git credential helper, SSH agent 또는 인증된 local checkout으로 접근을 준비합니다. 데모에서만 [credential file example](assets/demo-git-credential.example.json)을 저장소 밖의 owner-only local file로 복사해 채울 수 있습니다. Agent에는 파일 경로만 제공하고, 파일 내용이나 Access Token은 제공하지 않습니다. 데모 후에는 파일을 삭제하거나 token을 폐기합니다.
 
 ## 저장소 관리 원칙
 

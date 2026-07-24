@@ -2,7 +2,7 @@
 
 ## 1. Resolve Target
 
-Apply the Target Resolution Gate before repository discovery. Confirm the Repository URL or Local path, read-only access method, revision and analyzed subdirectory.
+Apply the Target Resolution Gate before repository discovery. Confirm the remote Git URL, local checkout or source archive, read-only access method, revision and analyzed subdirectory. For remote Git authentication or source archives, read [remote-git-access.md](remote-git-access.md).
 
 ## 2. Select Output Mode
 
