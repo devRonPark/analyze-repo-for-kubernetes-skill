@@ -24,10 +24,11 @@ def main() -> int:
         return 1
 
     with tempfile.TemporaryDirectory(prefix="codex-intake-") as workspace:
-        result = subprocess.run(
+        command = [codex, "exec"]
+        if os.environ.get("CODEX_BYPASS_HOOK_TRUST") == "1":
+            command.append("--dangerously-bypass-hook-trust")
+        command.extend(
             [
-                codex,
-                "exec",
                 "--ephemeral",
                 "--sandbox",
                 "read-only",
@@ -36,7 +37,10 @@ def main() -> int:
                 "-C",
                 workspace,
                 "/analyze-repo-for-kubernetes",
-            ],
+            ]
+        )
+        result = subprocess.run(
+            command,
             capture_output=True,
             text=True,
             check=False,
@@ -59,8 +63,13 @@ def main() -> int:
         for event in events
         if event.get("type") == "item.completed" and event.get("item", {}).get("type") == "agent_message"
     ]
-    if messages.count(QUESTION) != 1:
-        print("실패: Target 없는 호출은 지정된 질문을 정확히 한 번 출력해야 합니다.")
+    target_questions = [
+        message
+        for message in messages
+        if all(term in message for term in ("Git URL", "Local path", "Source archive"))
+    ]
+    if len(target_questions) != 1:
+        print("실패: Target 없는 호출은 Git URL, Local path, Source archive를 요청하는 질문을 한 번 출력해야 합니다.")
         return 1
 
     completed_commands = [

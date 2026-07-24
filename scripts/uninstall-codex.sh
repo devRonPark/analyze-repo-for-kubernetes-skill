@@ -3,7 +3,15 @@ set -euo pipefail
 
 TARGET_ROOT="${1:-$HOME/.agents/skills}"
 TARGET_DIR="$TARGET_ROOT/analyze-repo-for-kubernetes"
-CODEX_CONFIG_DIR="${CODEX_CONFIG_DIR:-$HOME/.codex}"
+if [[ -n "${CODEX_CONFIG_DIR:-}" ]]; then
+  CODEX_CONFIG_DIR="$CODEX_CONFIG_DIR"
+elif [[ -n "${CODEX_HOME:-}" ]]; then
+  CODEX_CONFIG_DIR="$CODEX_HOME"
+elif [[ -n "${USERPROFILE:-}" && -d "$USERPROFILE/.codex" ]]; then
+  CODEX_CONFIG_DIR="$USERPROFILE/.codex"
+else
+  CODEX_CONFIG_DIR="$HOME/.codex"
+fi
 CODEX_CONFIG_FILE="$CODEX_CONFIG_DIR/config.toml"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/analyze-repo-for-kubernetes"
 MANAGED_BEGIN="# BEGIN analyze-repo-for-kubernetes target gate"

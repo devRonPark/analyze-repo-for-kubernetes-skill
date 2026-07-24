@@ -169,6 +169,8 @@ bash scripts/install-codex.sh
 
 Codex CLI의 stable hooks 기능이 있으면 설치 스크립트는 `~/.codex/config.toml`에 이 skill만을 위한 `UserPromptSubmit` + `PreToolUse` Target Gate를 등록합니다. 등록 후 설정 검증이 실패하면 기존 설정을 복구하고 설치를 실패로 처리합니다. Codex가 처음 등록한 user hook은 `/hooks`에서 검토·신뢰해야 실행됩니다. 신뢰된 hook은 Target 미확정 상태의 로컬 repository 탐색을 차단하며, 없는 환경에서는 스킬 지시만 적용됩니다. Codex hosted web 도구는 현재 `PreToolUse` 대상이 아니므로 web 탐색 금지는 스킬 지시로 유지됩니다.
 
+WSL에서 Codex가 Windows profile을 Codex home으로 사용하면 설치 스크립트는 기존 `USERPROFILE/.codex`를 자동 선택한다. 필요한 경우 `CODEX_CONFIG_DIR`로 hook을 등록할 Codex home을 명시할 수 있다.
+
 테스트 등으로 hook 등록을 명시적으로 건너뛰려면 다음처럼 실행합니다.
 
 ```bash

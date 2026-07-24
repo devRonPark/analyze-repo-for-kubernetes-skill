@@ -57,6 +57,8 @@ class RepositoryDistributionTests(unittest.TestCase):
             env = os.environ.copy()
             env["HOME"] = str(home)
             env.pop("CODEX_SKIP_HOOK", None)
+            env.pop("CODEX_HOME", None)
+            env.pop("USERPROFILE", None)
             result = subprocess.run(
                 ["bash", str(ROOT / "scripts/install-codex.sh")],
                 cwd=ROOT,
