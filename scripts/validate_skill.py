@@ -36,6 +36,7 @@ REQUIRED_TERMS = [
     "배포 대상별 실행 정보", "Kubernetes 최소 설계 입력", "최소 입력 누락", "키: 값",
     "Default output mode: summary", "Target Resolution Gate",
     "Repository URL", "Local path", "Source archive", "Slash Command Input",
+    "ResolvedAnalysisRequest", "analysis_ready", "빠른 구조 파악", "전체 상세 보고서",
 ]
 
 

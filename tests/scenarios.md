@@ -34,6 +34,20 @@ Expected behavior:
 - does not execute archive contents or follow entries outside the archive extraction root
 - states the resolved scope before inventory
 
+## Scenario 0C — Purpose Resolution
+
+Provide an actionable Target with either an explicit or ambiguous analysis purpose.
+
+Expected behavior:
+
+- an explicit request for 빠른 구조 파악, Kubernetes 설계 준비, 이관 문제점 점검 or 전체 상세 보고서 proceeds without a context question
+- an ambiguous purpose receives exactly one AskUserQuestion with 빠른 구조 파악, Kubernetes 설계 준비, 이관 문제점 점검, 전체 상세 보고서 and 기본 분석으로 진행
+- Target collection and purpose collection never occur in the same turn
+- the selected or inferred purpose becomes internal `intent`, `scope` and `focus` in `ResolvedAnalysisRequest`
+- 전체 상세 보고서 maps internally to detailed; all other choices map to summary
+- the user is not asked to select summary, detailed, provider or phase
+- repository discovery starts only after `phase: analysis_ready`
+
 ## Scenario 1 — Default Summary Mode
 
 Analyze a Dockerfile-free monorepo.

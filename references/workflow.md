@@ -1,12 +1,14 @@
 # Repository Analysis Workflow
 
-## 1. Resolve Target
+## 1. Resolve and Normalize the Analysis Request
 
-Apply the Target Resolution Gate before repository discovery. Confirm the Repository URL or Local path, read-only access method, revision and analyzed subdirectory.
+Apply the Target Resolution Gate before repository discovery. Confirm the Git URL, Local path or Source archive, read-only access method, revision and analyzed subdirectory. Resolve the user's purpose only after the Target is actionable, then create and validate `ResolvedAnalysisRequest` with `intent`, `scope`, `focus`, `output_mode`, `provider` and `phase`.
 
-## 2. Select Output Mode
+When the purpose is unclear, ask one context question. Do not ask it in the same turn as a missing-Target AskUserQuestion. Do not ask the user to select `summary`, `detailed`, `provider` or `phase`.
 
-Use summary by default. Use detailed only when the user explicitly requests a full, exhaustive or detailed assessment.
+## 2. Confirm Analysis Readiness
+
+Begin repository discovery only after `ResolvedAnalysisRequest.phase` is `analysis_ready`. Use summary by default; use detailed only when the normalized purpose is 전체 상세 보고서.
 
 ## 3. Inventory High-Signal Files
 

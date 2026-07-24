@@ -229,6 +229,35 @@ class SkillPackageTests(unittest.TestCase):
         ]:
             self.assertIn(term, combined)
 
+    def test_resolved_analysis_request_contract(self):
+        text = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in [
+                ROOT / "SKILL.md",
+                ROOT / "references/source-intake-state.md",
+                ROOT / "references/workflow.md",
+            ]
+        )
+        for term in [
+            "ResolvedAnalysisRequest",
+            "purpose_required",
+            "analysis_ready",
+            "intent",
+            "scope",
+            "focus",
+            "output_mode",
+            "provider",
+            "phase",
+            "빠른 구조 파악",
+            "Kubernetes 설계 준비",
+            "이관 문제점 점검",
+            "전체 상세 보고서",
+            "기본 분석으로 진행",
+            "Target question and purpose question never occur in the same turn",
+            "Never ask the user to select `summary`, `detailed`, `provider` or `phase`",
+        ]:
+            self.assertIn(term, text)
+
     def test_output_contract(self):
         text = "\n".join(
             path.read_text(encoding="utf-8")
