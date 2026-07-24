@@ -37,6 +37,15 @@ class RepositoryDistributionTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_source_intake_helper_is_syntax_valid(self):
+        result = subprocess.run(
+            ["python3", "-m", "py_compile", str(ROOT / "scripts/source_intake.py")],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_install_script_creates_qwen_skill_symlink(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"

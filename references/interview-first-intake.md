@@ -8,6 +8,8 @@ Run this gate before any repository discovery tool call. The skill installation 
 
 If the user explicitly says “현재 저장소” or “현재 workspace,” resolve the current repository root. Otherwise collect the source-code delivery method and then its concrete value. For remote Git authentication and archive handling, read [remote-git-access.md](remote-git-access.md).
 
+Record `remote_git`, `local_checkout` or `source_archive` as the source-method state; never use a translated or display label as the branch key. For local checkout resolution, read [source-intake-state.md](source-intake-state.md).
+
 When both the delivery method and target are absent, ask exactly:
 
 ```text

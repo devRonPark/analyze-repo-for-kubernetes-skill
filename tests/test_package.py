@@ -268,6 +268,35 @@ class SkillPackageTests(unittest.TestCase):
             with self.assertRaises(module.CredentialError):
                 module.load_credential(credential, "https://git.example.internal/group/other.git")
 
+    def test_source_intake_uses_stable_ids_and_resolves_local_checkout(self):
+        module_path = ROOT / "scripts/source_intake.py"
+        spec = importlib.util.spec_from_file_location("source_intake", module_path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        self.assertEqual(module.select_source_method("local_checkout")["source_method"], "local_checkout")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            nested = root / "services" / "api"
+            nested.mkdir(parents=True)
+            for command in [
+                ["git", "init", str(root)],
+                ["git", "-C", str(root), "config", "user.email", "test@example.invalid"],
+                ["git", "-C", str(root), "config", "user.name", "Test"],
+                ["git", "-C", str(root), "commit", "--allow-empty", "-m", "initial"],
+            ]:
+                result = subprocess.run(command, capture_output=True, text=True, check=False)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            resolved = module.accept_source_value("local_checkout", str(nested))
+            self.assertEqual(resolved["state"], "resolved")
+            self.assertEqual(resolved["source_method"], "local_checkout")
+            self.assertEqual(resolved["resolved_target"], str(root.resolve()))
+            self.assertEqual(resolved["subdirectory"], "services/api")
+            with self.assertRaises(module.IntakeError):
+                module.accept_source_value("local_checkout", str(root / "missing"))
+
     def test_output_contract(self):
         text = "\n".join(
             path.read_text(encoding="utf-8")

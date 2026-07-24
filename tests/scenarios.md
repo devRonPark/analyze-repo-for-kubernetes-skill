@@ -11,6 +11,8 @@ Expected behavior:
 - stops the turn after asking for the delivery method
 - after an `원격 Git URL` choice, asks for the remote Git URL and stops; after a `로컬 checkout 경로` choice, asks for the Local path and stops; after a `소스 압축 파일` choice, asks for the archive path and stops
 - skips the follow-up question when a delivery method and concrete target are supplied together
+- records `remote_git`, `local_checkout` or `source_archive` as a stable source-method ID rather than branching on the displayed label
+- resolves a selected local checkout path to its Git root, revision and requested subdirectory before inventory
 - does not inspect the skill package, current working directory, or `tests/fixtures`
 - does not use directory listing, file search, shell, Git, or web tools to guess the target
 - never requests credential values

@@ -13,6 +13,7 @@ REQUIRED = [
     "references/workflow.md",
     "references/interview-first-intake.md",
     "references/remote-git-access.md",
+    "references/source-intake-state.md",
     "references/repository-analysis-checklist.md",
     "references/language-discovery-rules.md",
     "references/dependency-analysis.md",
@@ -23,6 +24,7 @@ REQUIRED = [
     "assets/demo-git-credential.example.json",
     "scripts/validate_report.py",
     "scripts/demo_git_readonly_clone.py",
+    "scripts/source_intake.py",
     "tests/scenarios.md",
 ]
 
