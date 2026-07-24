@@ -1,17 +1,23 @@
 # Interview-First Intake
 
-Use this intake before repository analysis when the target is not already actionable.
+Use this intake before repository analysis to resolve the analysis target. It preserves the Interview-first AskUserQuestion flow when the target is not already actionable.
 
 ## Target Resolution Gate
 
 Run this gate before any repository discovery tool call. The skill installation directory, current directory, `SKILL.md`, `references/`, `assets/`, `scripts/`, `tests/` and fixtures are not the analysis target.
 
-If the user explicitly says “현재 저장소” or “현재 workspace,” resolve the current repository root. Otherwise require one concrete Repository URL or Local path.
+Resolve target candidates in this order:
 
-When the target is absent, ask exactly:
+1. A concrete Target supplied as Slash Command Input.
+2. A GitHub URL or Git URL in the natural-language request.
+3. An explicit “현재 저장소” or “현재 workspace,” resolved to the current repository root.
+
+Slash Command Input wins when it and the natural-language request contain different Targets. A natural-language GitHub URL or Git URL is already a concrete target and must not be requested again.
+
+When the target is absent, ask exactly one AskUserQuestion:
 
 ```text
-분석할 Repository URL 또는 Local path를 알려 주세요.
+분석할 Git URL, Local path 또는 Source archive를 알려 주세요.
 ```
 
 Stop the turn after asking. Do not use directory listing, file search, shell, Git or web tools to guess the target.
@@ -25,6 +31,10 @@ For a private repository, use only an existing authenticated connector, CLI sess
 ## Local Path
 
 Resolve relative paths and verify that the path exists and is readable. Never replace a missing path with a similar path or the skill root. Do not follow a symlink outside the resolved analysis root.
+
+## Source Archive
+
+Accept only ZIP, tar, tar.gz or tgz source archives supplied as an attachment or a concrete local archive path. Open the archive read-only. Do not execute archive content and do not follow archive entries that resolve outside the archive extraction root.
 
 ## Resolved Scope
 

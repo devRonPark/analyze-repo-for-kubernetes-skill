@@ -2,16 +2,37 @@
 
 ## Scenario 0 — Interview-First Target Selection
 
-Invoke the skill without a target.
+Invoke the Slash Command without a target.
 
 Expected behavior:
 
 - applies the Target Resolution Gate before any repository discovery tool call
-- asks for one concrete Repository URL or Local path in a single question
+- asks for one concrete Git URL, Local path or Source archive in a single AskUserQuestion
 - stops the turn after asking
 - does not inspect the skill package, current working directory, or `tests/fixtures`
 - does not use directory listing, file search, shell, Git, or web tools to guess the target
 - never requests credential values
+
+## Scenario 0A — Natural-Language Git URL
+
+Ask to analyze a GitHub or Git URL in natural language.
+
+Expected behavior:
+
+- uses the supplied URL as the Target without asking for the URL again
+- applies the same read-only revision and safe-access rules as a Repository URL supplied through Slash Command Input
+- performs repository discovery only after the URL is resolved and accessible
+
+## Scenario 0B — Slash Command Input Priority and Source Archive
+
+Supply a Git URL, Local path or ZIP/tar/tar.gz/tgz Source archive as Slash Command Input. Include a conflicting natural-language Target when verifying priority.
+
+Expected behavior:
+
+- uses the concrete Slash Command Input Target in preference to a natural-language Target
+- accepts the supported Source archive as a read-only Target
+- does not execute archive contents or follow entries outside the archive extraction root
+- states the resolved scope before inventory
 
 ## Scenario 1 — Default Summary Mode
 

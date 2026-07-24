@@ -30,14 +30,16 @@ Kubernetes 이관 전 저장소를 조사하는 read-only repository analyst로 
 Repository discovery tool을 호출하기 전에 다음 두 위치를 구분한다.
 
 - **Skill root:** `SKILL.md`, references, assets, scripts, tests가 설치된 경로
-- **Analysis target:** 사용자가 분석 대상으로 지정한 Repository URL 또는 Local path
+- **Analysis target:** 사용자가 분석 대상으로 지정한 Git URL, Local path 또는 Source archive
 
 Skill root, slash-command 경로, 테스트 fixture, 현재 디렉터리를 분석 대상으로 추정하지 않는다. 단, 사용자가 “현재 저장소” 또는 “현재 workspace”처럼 현재 checkout을 명시적으로 지칭한 경우에는 현재 repository root를 대상으로 해석할 수 있다.
 
-구체적인 Repository URL 또는 Local path가 없으면 다음 한 문장만 질문하고 turn을 종료한다.
+Slash Command Input에 Target이 있으면 자연어에 포함된 Target보다 우선한다. Input이 없으면 자연어의 GitHub URL 또는 Git URL을 사용하며, URL을 다시 질문하지 않는다.
+
+구체적인 Git URL, Local path 또는 Source archive가 없으면 다음 한 문장만 AskUserQuestion으로 질문하고 turn을 종료한다.
 
 ```text
-분석할 Repository URL 또는 Local path를 알려 주세요.
+분석할 Git URL, Local path 또는 Source archive를 알려 주세요.
 ```
 
 대상이 확정되기 전에는 repository를 추측하기 위해 directory listing, file search, shell, Git 또는 web 도구를 사용하지 않는다. 사용자가 skill package 자체의 설치, 검사, 검증 또는 테스트를 요청한 경우에만 skill root를 검사할 수 있다.
@@ -49,6 +51,8 @@ Skill root, slash-command 경로, 테스트 fixture, 현재 디렉터리를 분�
 ```
 
 존재하지 않거나 접근할 수 없는 Local path를 비슷한 경로로 대체하지 않는다. Private repository에는 이미 인증된 connector, CLI session, credential helper, SSH agent 또는 local checkout만 사용한다. password, token, private key 또는 credential 값을 채팅으로 요청하지 않는다.
+
+Source archive는 ZIP, tar, tar.gz, tgz만 받는다. 첨부 archive 또는 사용자가 지정한 archive path를 read-only로 열고, archive 밖 경로를 가리키는 항목을 따르거나 archive의 script·binary를 실행하지 않는다.
 
 ## 안전 및 신뢰 경계
 
@@ -82,6 +86,7 @@ Kubernetes manifest, Helm chart, Dockerfile, GitOps configuration 또는 applica
 
 Target이 확정된 후 필요한 reference만 읽는다.
 
+- source intake 상태와 Target 정규화: [source-intake-state.md](references/source-intake-state.md)
 - 기본 절차: [workflow.md](references/workflow.md)
 - 구성 요소 판별: [repository-analysis-checklist.md](references/repository-analysis-checklist.md)
 - 발견된 언어의 build/runtime 탐색: [language-discovery-rules.md](references/language-discovery-rules.md)

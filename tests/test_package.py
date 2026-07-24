@@ -212,7 +212,8 @@ class SkillPackageTests(unittest.TestCase):
     def test_target_resolution_gate_contract(self):
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
         intake = (ROOT / "references/interview-first-intake.md").read_text(encoding="utf-8")
-        combined = skill + "\n" + intake
+        state = (ROOT / "references/source-intake-state.md").read_text(encoding="utf-8")
+        combined = skill + "\n" + intake + "\n" + state
         for term in [
             "Target Resolution Gate",
             "skill installation directory",
@@ -220,6 +221,9 @@ class SkillPackageTests(unittest.TestCase):
             "Stop the turn after asking",
             "Repository URL",
             "Local path",
+            "Source archive",
+            "Slash Command Input",
+            "ZIP, tar, tar.gz, tgz",
             "directory listing",
             "tests/",
         ]:

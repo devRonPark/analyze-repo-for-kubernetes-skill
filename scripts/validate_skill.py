@@ -12,6 +12,7 @@ REQUIRED = [
     "agents/openai.yaml",
     "references/workflow.md",
     "references/interview-first-intake.md",
+    "references/source-intake-state.md",
     "references/repository-analysis-checklist.md",
     "references/language-discovery-rules.md",
     "references/dependency-analysis.md",
@@ -34,7 +35,7 @@ REQUIRED_TERMS = [
     "실행 위치", "적용 시점",
     "배포 대상별 실행 정보", "Kubernetes 최소 설계 입력", "최소 입력 누락", "키: 값",
     "Default output mode: summary", "Target Resolution Gate",
-    "Repository URL", "Local path",
+    "Repository URL", "Local path", "Source archive", "Slash Command Input",
 ]
 
 
