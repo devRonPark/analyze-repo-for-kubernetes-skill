@@ -1,0 +1,1241 @@
+<!doctype html>
+<!--
+  PROTOTYPE - repository analysis flow explorer.
+  Three variants of the repository analysis architecture flow, switchable with ?variant=A|B|C.
+  This is a standalone throwaway HTML prototype for explaining input/output at each pipeline step.
+-->
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Repository Analysis Flow Prototype</title>
+  <style>
+    :root {
+      --bg: #f7f8fa;
+      --panel: #ffffff;
+      --panel-2: #f1f5f9;
+      --ink: #172033;
+      --muted: #64748b;
+      --line: #d8dee8;
+      --blue: #2563eb;
+      --blue-soft: #dbeafe;
+      --green: #0f766e;
+      --green-soft: #ccfbf1;
+      --amber: #b45309;
+      --amber-soft: #fef3c7;
+      --red: #b91c1c;
+      --red-soft: #fee2e2;
+      --code: #111827;
+      --shadow: 0 18px 38px rgba(15, 23, 42, 0.08);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--bg);
+    }
+
+    button,
+    select {
+      font: inherit;
+    }
+
+    .app {
+      min-height: 100vh;
+      padding: 28px 28px 92px;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 20px;
+      align-items: start;
+      margin: 0 auto 18px;
+      max-width: 1480px;
+    }
+
+    .title-block {
+      display: grid;
+      gap: 6px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 28px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      max-width: 900px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+
+    .segmented {
+      display: inline-flex;
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 8px 20px rgba(15, 23, 42, 0.04);
+    }
+
+    .segment {
+      min-height: 34px;
+      border: 0;
+      border-radius: 6px;
+      padding: 0 12px;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .segment.active {
+      color: #ffffff;
+      background: var(--blue);
+    }
+
+    .layout {
+      max-width: 1480px;
+      margin: 0 auto;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: center;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 750;
+      letter-spacing: 0;
+    }
+
+    .panel-note {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .repo-summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .stat {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    .stat-label {
+      margin-bottom: 7px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .stat-value {
+      font-size: 14px;
+      font-weight: 720;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
+
+    .flow-layout {
+      display: grid;
+      grid-template-columns: minmax(330px, 0.9fr) minmax(0, 1.6fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .steps {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+    }
+
+    .step-button {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      min-height: 64px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      color: var(--ink);
+      background: #fff;
+      cursor: pointer;
+      text-align: left;
+    }
+
+    .step-button.active {
+      border-color: var(--blue);
+      background: var(--blue-soft);
+    }
+
+    .step-num {
+      display: inline-grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 999px;
+      color: #ffffff;
+      background: var(--ink);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .step-name {
+      display: block;
+      font-weight: 760;
+      line-height: 1.3;
+    }
+
+    .step-mode {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      border-radius: 999px;
+      padding: 0 8px;
+      font-size: 11px;
+      font-weight: 760;
+      white-space: nowrap;
+    }
+
+    .mode-det {
+      color: var(--green);
+      background: var(--green-soft);
+    }
+
+    .mode-llm {
+      color: var(--amber);
+      background: var(--amber-soft);
+    }
+
+    .mode-mixed {
+      color: var(--blue);
+      background: var(--blue-soft);
+    }
+
+    .detail {
+      padding: 18px;
+    }
+
+    .detail-head {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .detail-title-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .detail h2 {
+      margin: 0;
+      font-size: 22px;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    .detail-summary {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .io-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .io-box {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    .io-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      min-height: 42px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel-2);
+      font-size: 12px;
+      font-weight: 780;
+    }
+
+    pre {
+      margin: 0;
+      min-height: 220px;
+      max-height: 520px;
+      padding: 14px;
+      overflow: auto;
+      color: #d1d5db;
+      background: var(--code);
+      font-size: 12px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .evidence-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .evidence {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: #334155;
+      background: #fff;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .repo-column {
+      display: grid;
+      gap: 14px;
+      align-content: start;
+    }
+
+    .mini-list {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+    }
+
+    .mini-row {
+      display: grid;
+      gap: 6px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .mini-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .mini-value {
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .matrix {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .matrix th,
+    .matrix td {
+      padding: 12px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+    }
+
+    .matrix th {
+      color: var(--muted);
+      background: var(--panel-2);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .matrix td {
+      line-height: 1.45;
+      background: #fff;
+    }
+
+    .timeline {
+      display: grid;
+      gap: 12px;
+      padding: 16px;
+    }
+
+    .timeline-row {
+      display: grid;
+      grid-template-columns: 180px minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+    }
+
+    .timeline-axis {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .timeline-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      background: var(--blue);
+    }
+
+    .timeline-content {
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .timeline-content strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+
+    .timeline-content p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .switcher {
+      position: fixed;
+      left: 50%;
+      bottom: 18px;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px;
+      border: 1px solid rgba(15, 23, 42, 0.18);
+      border-radius: 999px;
+      color: #fff;
+      background: #172033;
+      box-shadow: 0 16px 36px rgba(15, 23, 42, 0.28);
+      transform: translateX(-50%);
+    }
+
+    .switcher button {
+      display: inline-grid;
+      place-items: center;
+      width: 36px;
+      height: 36px;
+      border: 0;
+      border-radius: 999px;
+      color: #172033;
+      background: #fff;
+      cursor: pointer;
+      font-size: 18px;
+      font-weight: 900;
+    }
+
+    .switcher-label {
+      min-width: 190px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 760;
+      white-space: nowrap;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    @media (max-width: 980px) {
+      .app {
+        padding: 18px 14px 96px;
+      }
+
+      .topbar,
+      .flow-layout,
+      .split,
+      .io-grid,
+      .repo-summary {
+        grid-template-columns: 1fr;
+      }
+
+      .controls {
+        justify-content: flex-start;
+      }
+
+      .segmented {
+        width: 100%;
+        overflow-x: auto;
+      }
+
+      .timeline-row {
+        grid-template-columns: 1fr;
+      }
+
+      .switcher-label {
+        min-width: 132px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="topbar" aria-label="prototype header">
+      <div class="title-block">
+        <h1>LLM-centered Repository Analysis Flow</h1>
+        <p class="subtitle">
+          두 실제 repository를 같은 pipeline에 통과시켜 각 단계의 input/output을 보여주는 프로토타입입니다.
+          결정론적 로직은 evidence를 만들고 검증하며, LLM은 repository별 의미 판단을 맡습니다.
+        </p>
+      </div>
+      <div class="controls" aria-label="repository selection">
+        <div class="segmented" role="tablist" aria-label="repositories">
+          <button class="segment active" data-repo="jpetstore" role="tab">mybatis/jpetstore-6</button>
+          <button class="segment" data-repo="petclinic" role="tab">spring-petclinic</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="layout" id="variant-root"></section>
+  </main>
+
+  <nav class="switcher" aria-label="prototype variants">
+    <button type="button" id="prev-variant" aria-label="previous variant">&lt;</button>
+    <div class="switcher-label" id="variant-label">A - Pipeline explorer</div>
+    <button type="button" id="next-variant" aria-label="next variant">&gt;</button>
+  </nav>
+
+  <script>
+    const pipelineSteps = [
+      {
+        id: "snapshot",
+        name: "RepositorySnapshot",
+        mode: "deterministic",
+        summary: "URL, revision, 분석 경로, 파일 목록을 고정합니다. 이 단계는 의미 판단을 하지 않습니다."
+      },
+      {
+        id: "collector",
+        name: "Universal Evidence Collector",
+        mode: "deterministic",
+        summary: "표준 검색과 line index로 evidence 후보를 모읍니다. 언어별 의미는 아직 확정하지 않습니다."
+      },
+      {
+        id: "triage",
+        name: "LLM-centered File Triage",
+        mode: "llm",
+        summary: "어떤 파일을 깊게 읽어야 하는지, 어떤 질문이 남는지 LLM이 고릅니다."
+      },
+      {
+        id: "typed",
+        name: "Typed Evidence Model",
+        mode: "mixed",
+        summary: "파싱 가능한 표준 파일은 구조화하고, 애매한 파일은 LLM 판단 결과와 line evidence를 묶습니다."
+      },
+      {
+        id: "reasoner",
+        name: "LLM Reasoner",
+        mode: "llm",
+        summary: "deployable 후보, dependency 의미, Kubernetes 설계 입력, 차단 항목을 판단합니다."
+      },
+      {
+        id: "verifier",
+        name: "Deterministic Verifier",
+        mode: "deterministic",
+        summary: "모든 claim이 evidence line 또는 absence search를 갖는지 확인합니다."
+      },
+      {
+        id: "renderer",
+        name: "Report Renderer",
+        mode: "deterministic",
+        summary: "검증된 report model을 Markdown/JSON 출력 계약에 맞춰 렌더링합니다."
+      }
+    ];
+
+    const repos = {
+      jpetstore: {
+        label: "mybatis/jpetstore-6",
+        url: "https://github.com/mybatis/jpetstore-6",
+        branch: "master",
+        revision: "c0375203fe1c374fe7fd8222853fd152d782c5b7",
+        archetype: "Maven WAR + servlet container",
+        contrast: "Dockerfile과 Compose는 있지만 Kubernetes manifest는 없음",
+        coreFinding: "단일 WAR web workload, embedded HSQLDB, session state",
+        evidenceSummary: [
+          "pom.xml:33 - packaging war",
+          "Dockerfile:17-21 - openjdk:25, mvnw package, cargo run",
+          "docker-compose.yaml:19-26 - jpetstore service, 8080:8080",
+          "src/main/webapp/WEB-INF/applicationContext.xml:31-34 - embedded database"
+        ],
+        steps: {
+          snapshot: {
+            input: {
+              target: "https://github.com/mybatis/jpetstore-6",
+              intent: "kubernetes_design_preparation",
+              subdirectory: "."
+            },
+            output: {
+              repository_url: "https://github.com/mybatis/jpetstore-6",
+              branch: "master",
+              revision: "c0375203fe1c374fe7fd8222853fd152d782c5b7",
+              high_signal_files: [
+                "pom.xml",
+                "Dockerfile",
+                "docker-compose.yaml",
+                "src/main/webapp/WEB-INF/web.xml",
+                "src/main/webapp/WEB-INF/applicationContext.xml"
+              ]
+            },
+            evidence: ["git rev-parse HEAD", "rg --files high-signal globs"]
+          },
+          collector: {
+            input: {
+              snapshot_ref: "jpetstore@c0375203",
+              search_plan: [
+                "manifest and lockfiles",
+                "container definitions",
+                "runtime entrypoints",
+                "deployment manifests",
+                "DB and broker configuration"
+              ]
+            },
+            output: {
+              build_manifest: ["pom.xml:30-33", "pom.xml:60-73"],
+              container_definition: ["Dockerfile:17-21", "docker-compose.yaml:19-26"],
+              runtime_entrypoint: ["Dockerfile:21", "README.md:40-43"],
+              app_config: ["web.xml:30-63", "applicationContext.xml:31-54"],
+              deployment_absence: "검색(scope=., pattern=Chart.yaml|kustomization.yaml|kind: Deployment|kind: Service|kind: Ingress, result=없음)"
+            },
+            evidence: ["pom.xml:33", "Dockerfile:21", "docker-compose.yaml:25", "applicationContext.xml:31-34"]
+          },
+          triage: {
+            input: {
+              collected_files: [
+                "pom.xml",
+                "Dockerfile",
+                "docker-compose.yaml",
+                "web.xml",
+                "applicationContext.xml",
+                "README.md",
+                ".github/workflows/support.yaml"
+              ],
+              question: "어떤 파일이 deployable runtime behavior를 직접 설명하는가?"
+            },
+            output: {
+              must_read: ["Dockerfile", "pom.xml", "web.xml", "applicationContext.xml"],
+              support_read: ["README.md", ".github/workflows/support.yaml"],
+              skip_as_secondary: ["src/main/webapp/images/**", "src/site/**", "tests/**"],
+              unresolved_questions: [
+                "Cargo/Tomcat 기동이 production baseline인가, local launch evidence인가?",
+                "embedded HSQLDB를 production에서도 유지할 의도인가?"
+              ]
+            },
+            evidence: ["README.md:64-71", ".github/workflows/support.yaml:65-73"]
+          },
+          typed: {
+            input: {
+              line_chunks: [
+                "pom.xml:30-33",
+                "Dockerfile:17-21",
+                "docker-compose.yaml:19-26",
+                "applicationContext.xml:31-54"
+              ]
+            },
+            output: {
+              facts: [
+                {
+                  type: "build_artifact",
+                  value: "war",
+                  evidence: "pom.xml:33"
+                },
+                {
+                  type: "startup_command",
+                  value: "./mvnw cargo:run -P tomcat90",
+                  evidence: "Dockerfile:21"
+                },
+                {
+                  type: "listener_port",
+                  value: 8080,
+                  evidence: "docker-compose.yaml:24-25"
+                },
+                {
+                  type: "runtime_dependency",
+                  value: "embedded HSQLDB dataSource",
+                  evidence: "applicationContext.xml:31-34"
+                }
+              ]
+            },
+            evidence: ["pom.xml:33", "Dockerfile:21", "docker-compose.yaml:24-25", "applicationContext.xml:31-34"]
+          },
+          reasoner: {
+            input: {
+              typed_facts: "build_artifact + startup_command + listener_port + runtime_dependency",
+              analysis_policy: "package manifest alone is not deployable; preserve unknowns"
+            },
+            output: {
+              deployable_candidates: ["jpetstore webapp"],
+              classification: "기존 컨테이너 정의 있음",
+              dependencies: ["browser -> jpetstore HTTP", "jpetstore -> embedded HSQLDB SQL"],
+              k8s_inputs: {
+                workload_kind: "Deployment 후보",
+                service: "8080 대상 Service 후보",
+                ingress: "/jpetstore/ HTTP 노출 후보"
+              },
+              blockers: ["registry-qualified image missing", "production persistence strategy missing", "session strategy missing"]
+            },
+            evidence: ["web.xml:55-63", "Dockerfile:17-21", "applicationContext.xml:31-54"]
+          },
+          verifier: {
+            input: {
+              claims: [
+                "jpetstore is a deployable web workload",
+                "port 8080 is confirmed",
+                "Kubernetes manifests are absent",
+                "runtime DB is embedded HSQLDB"
+              ]
+            },
+            output: {
+              passed: 4,
+              warnings: [
+                "image registry claim must remain 미확인",
+                "local Compose must not be promoted to operating-environment baseline"
+              ],
+              rejected_claims: []
+            },
+            evidence: ["docker-compose.yaml:24-25", "검색(scope=., pattern=kind: Deployment|Chart.yaml, result=없음)"]
+          },
+          renderer: {
+            input: {
+              verified_model: "deployable candidates + config + dependencies + k8s input state",
+              output_mode: "summary"
+            },
+            output: {
+              markdown_sections: [
+                "분석 범위",
+                "배포 대상 후보",
+                "배포 대상별 실행 정보",
+                "구성과 관계",
+                "운영 환경 배포 근거",
+                "Kubernetes 설계 입력 상태"
+              ],
+              final_verdict: "추가 정보 필요"
+            },
+            evidence: ["Completion Gate: every repository fact has line evidence or absence search"]
+          }
+        }
+      },
+      petclinic: {
+        label: "spring-projects/spring-petclinic",
+        url: "https://github.com/spring-projects/spring-petclinic",
+        branch: "main",
+        revision: "f182358d02e4a68e52bdbabf55ca7800288511e7",
+        archetype: "Spring Boot app + Maven/Gradle + existing k8s manifests",
+        contrast: "Dockerfile은 없고 Spring Boot build-image와 k8s manifest가 있음",
+        coreFinding: "단일 Spring Boot web workload, H2 default, MySQL/Postgres profiles, Postgres k8s example",
+        evidenceSummary: [
+          "README.md:16-36 - Spring Boot, Maven/Gradle, port 8080",
+          "README.md:45-52 - no Dockerfile, build-image command",
+          "k8s/petclinic.yml:15-64 - Deployment, image, env, probes",
+          "application-postgres.properties:3-5 - postgres datasource env"
+        ],
+        steps: {
+          snapshot: {
+            input: {
+              target: "https://github.com/spring-projects/spring-petclinic",
+              intent: "kubernetes_design_preparation",
+              subdirectory: "."
+            },
+            output: {
+              repository_url: "https://github.com/spring-projects/spring-petclinic",
+              branch: "main",
+              revision: "f182358d02e4a68e52bdbabf55ca7800288511e7",
+              high_signal_files: [
+                "pom.xml",
+                "build.gradle",
+                "docker-compose.yml",
+                "k8s/petclinic.yml",
+                "k8s/db.yml",
+                "src/main/resources/application*.properties",
+                "PetClinicApplication.java"
+              ]
+            },
+            evidence: ["git rev-parse HEAD", "rg --files high-signal globs"]
+          },
+          collector: {
+            input: {
+              snapshot_ref: "spring-petclinic@f182358d",
+              search_plan: [
+                "manifest and lockfiles",
+                "container definitions",
+                "runtime entrypoints",
+                "deployment manifests",
+                "DB and broker configuration"
+              ]
+            },
+            output: {
+              build_manifest: ["pom.xml:5-19", "build.gradle:1-20"],
+              runtime_entrypoint: ["PetClinicApplication.java:28-34", "README.md:25-36"],
+              image_build: ["README.md:43-52", "pom.xml:256-257"],
+              deployment_manifest: ["k8s/petclinic.yml:1-64", "k8s/db.yml:1-73"],
+              dockerfile_absence: "검색(scope=., pattern=Dockerfile*, result=없음)"
+            },
+            evidence: ["README.md:45-52", "PetClinicApplication.java:28-34", "k8s/petclinic.yml:31-54"]
+          },
+          triage: {
+            input: {
+              collected_files: [
+                "pom.xml",
+                "build.gradle",
+                "README.md",
+                "docker-compose.yml",
+                "k8s/petclinic.yml",
+                "k8s/db.yml",
+                "application.properties",
+                "application-mysql.properties",
+                "application-postgres.properties"
+              ],
+              question: "Maven/Gradle 공존, Dockerfile 부재, k8s manifest 존재를 어떻게 해석할 것인가?"
+            },
+            output: {
+              must_read: ["PetClinicApplication.java", "application*.properties", "k8s/*.yml"],
+              support_read: ["README.md", "docker-compose.yml", "pom.xml", "build.gradle"],
+              skip_as_secondary: ["static font/image assets", "test-only Testcontainers apps"],
+              unresolved_questions: [
+                "운영 image는 k8s의 dsyer/petclinic을 그대로 쓸 것인가?",
+                "H2 default와 Postgres k8s profile 중 production 기준은 무엇인가?"
+              ]
+            },
+            evidence: ["README.md:61-65", "k8s/petclinic.yml:33-43"]
+          },
+          typed: {
+            input: {
+              line_chunks: [
+                "PetClinicApplication.java:28-34",
+                "README.md:43-52",
+                "application.properties:1-21",
+                "application-postgres.properties:1-7",
+                "k8s/petclinic.yml:1-64"
+              ]
+            },
+            output: {
+              facts: [
+                {
+                  type: "entrypoint",
+                  value: "SpringApplication.run(PetClinicApplication.class, args)",
+                  evidence: "PetClinicApplication.java:32-33"
+                },
+                {
+                  type: "image_build",
+                  value: "./mvnw spring-boot:build-image",
+                  evidence: "README.md:49-52"
+                },
+                {
+                  type: "k8s_workload",
+                  value: "Deployment petclinic image dsyer/petclinic",
+                  evidence: "k8s/petclinic.yml:15-34"
+                },
+                {
+                  type: "runtime_profile",
+                  value: "SPRING_PROFILES_ACTIVE=postgres",
+                  evidence: "k8s/petclinic.yml:34-37"
+                },
+                {
+                  type: "health_probe",
+                  value: "/livez and /readyz",
+                  evidence: "k8s/petclinic.yml:47-54"
+                }
+              ]
+            },
+            evidence: ["PetClinicApplication.java:32-33", "README.md:49-52", "k8s/petclinic.yml:47-54"]
+          },
+          reasoner: {
+            input: {
+              typed_facts: "Spring Boot entrypoint + k8s Deployment + datasource profiles + DB manifests",
+              analysis_policy: "separate source launch, local compose, and operating-environment deployment evidence"
+            },
+            output: {
+              deployable_candidates: ["petclinic Spring Boot webapp"],
+              classification: "대체 이미지 빌드 방식",
+              repository_defined_dependencies: ["postgres demo-db from k8s/db.yml", "mysql/postgres compose services for local profiles"],
+              external_dependencies: ["production DB boundary 미확인"],
+              k8s_inputs: {
+                workload_kind: "Deployment confirmed",
+                image: "dsyer/petclinic from k8s manifest",
+                service: "NodePort service port 80 -> 8080",
+                probes: "/livez, /readyz"
+              },
+              blockers: ["production image ownership 확인 필요", "DB secret values must not come from demo manifest as production defaults"]
+            },
+            evidence: ["k8s/petclinic.yml:1-64", "k8s/db.yml:1-73", "application-postgres.properties:3-5"]
+          },
+          verifier: {
+            input: {
+              claims: [
+                "Spring Boot app is deployable",
+                "Dockerfile is absent",
+                "k8s manifest exists",
+                "Postgres profile is used by k8s manifest",
+                "Secret literal values must be redacted in report"
+              ]
+            },
+            output: {
+              passed: 5,
+              warnings: [
+                "demo Secret values are repository facts but cannot be repeated as recommended production secrets",
+                "Maven and Gradle both exist; package manager conclusion must be scoped, not collapsed"
+              ],
+              rejected_claims: []
+            },
+            evidence: ["README.md:45", "k8s/petclinic.yml:35-36", "k8s/db.yml:7-14"]
+          },
+          renderer: {
+            input: {
+              verified_model: "deployable candidates + existing k8s declarations + config + dependencies",
+              output_mode: "summary"
+            },
+            output: {
+              markdown_sections: [
+                "분석 범위",
+                "배포 대상 후보",
+                "배포 대상별 실행 정보",
+                "구성과 관계",
+                "운영 환경 배포 근거",
+                "Kubernetes 설계 입력 상태"
+              ],
+              final_verdict: "추가 정보 필요"
+            },
+            evidence: ["Completion Gate: claims cite k8s/*.yml, properties, README, source entrypoint"]
+          }
+        }
+      }
+    };
+
+    const variants = [
+      { id: "A", name: "Pipeline explorer" },
+      { id: "B", name: "Repo comparison" },
+      { id: "C", name: "Evidence timeline" }
+    ];
+
+    let activeRepo = "jpetstore";
+    let activeStep = "snapshot";
+
+    const root = document.getElementById("variant-root");
+    const variantLabel = document.getElementById("variant-label");
+
+    function getVariant() {
+      const params = new URLSearchParams(window.location.search);
+      const candidate = (params.get("variant") || "A").toUpperCase();
+      return variants.some((variant) => variant.id === candidate) ? candidate : "A";
+    }
+
+    function setVariant(next) {
+      const params = new URLSearchParams(window.location.search);
+      params.set("variant", next);
+      window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+      render();
+    }
+
+    function cycleVariant(direction) {
+      const current = getVariant();
+      const index = variants.findIndex((variant) => variant.id === current);
+      const nextIndex = (index + direction + variants.length) % variants.length;
+      setVariant(variants[nextIndex].id);
+    }
+
+    function modeClass(mode) {
+      if (mode === "deterministic") return "mode-det";
+      if (mode === "llm") return "mode-llm";
+      return "mode-mixed";
+    }
+
+    function modeLabel(mode) {
+      if (mode === "deterministic") return "Deterministic";
+      if (mode === "llm") return "LLM-centered";
+      return "Hybrid";
+    }
+
+    function el(tag, className, text) {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    }
+
+    function renderJson(target, value) {
+      target.textContent = JSON.stringify(value, null, 2).replace(/("password": )"[^"]+"/gi, "$1\"[REDACTED]\"");
+    }
+
+    function renderRepoSummary(repo) {
+      const summary = el("section", "repo-summary");
+      [
+        ["Repository", repo.label],
+        ["Revision", `${repo.branch} / ${repo.revision.slice(0, 12)}`],
+        ["Archetype", repo.archetype],
+        ["Core finding", repo.coreFinding]
+      ].forEach(([label, value]) => {
+        const stat = el("div", "stat");
+        stat.appendChild(el("div", "stat-label", label));
+        stat.appendChild(el("div", "stat-value", value));
+        summary.appendChild(stat);
+      });
+      return summary;
+    }
+
+    function renderVariantA(repo) {
+      const wrapper = el("div", "");
+      wrapper.appendChild(renderRepoSummary(repo));
+
+      const layout = el("section", "flow-layout");
+
+      const stepsPanel = el("aside", "panel");
+      const stepsHeader = el("div", "panel-header");
+      stepsHeader.appendChild(el("h2", "panel-title", "Pipeline steps"));
+      stepsHeader.appendChild(el("span", "panel-note", "클릭해서 IO 확인"));
+      stepsPanel.appendChild(stepsHeader);
+
+      const steps = el("div", "steps");
+      pipelineSteps.forEach((step, index) => {
+        const button = el("button", `step-button ${step.id === activeStep ? "active" : ""}`);
+        button.type = "button";
+        button.addEventListener("click", () => {
+          activeStep = step.id;
+          render();
+        });
+        button.appendChild(el("span", "step-num", String(index + 1)));
+        const textWrap = el("span", "");
+        textWrap.appendChild(el("span", "step-name", step.name));
+        button.appendChild(textWrap);
+        button.appendChild(el("span", `step-mode ${modeClass(step.mode)}`, modeLabel(step.mode)));
+        steps.appendChild(button);
+      });
+      stepsPanel.appendChild(steps);
+
+      const detailPanel = el("section", "panel detail");
+      const step = pipelineSteps.find((item) => item.id === activeStep);
+      const data = repo.steps[activeStep];
+      const detailHead = el("div", "detail-head");
+      const titleRow = el("div", "detail-title-row");
+      titleRow.appendChild(el("h2", "", step.name));
+      titleRow.appendChild(el("span", `step-mode ${modeClass(step.mode)}`, modeLabel(step.mode)));
+      detailHead.appendChild(titleRow);
+      detailHead.appendChild(el("p", "detail-summary", step.summary));
+      detailPanel.appendChild(detailHead);
+
+      const ioGrid = el("div", "io-grid");
+      const inputBox = renderIoBox("Input", "이 단계가 받는 구조화된 입력", data.input);
+      const outputBox = renderIoBox("Output", "다음 단계로 넘기는 결과", data.output);
+      ioGrid.appendChild(inputBox);
+      ioGrid.appendChild(outputBox);
+      detailPanel.appendChild(ioGrid);
+      detailPanel.appendChild(renderEvidenceStrip(data.evidence));
+
+      layout.appendChild(stepsPanel);
+      layout.appendChild(detailPanel);
+      wrapper.appendChild(layout);
+      return wrapper;
+    }
+
+    function renderIoBox(title, note, data) {
+      const box = el("div", "io-box");
+      const head = el("div", "io-title");
+      head.appendChild(el("span", "", title));
+      head.appendChild(el("span", "panel-note", note));
+      const pre = document.createElement("pre");
+      renderJson(pre, data);
+      box.appendChild(head);
+      box.appendChild(pre);
+      return box;
+    }
+
+    function renderEvidenceStrip(items) {
+      const strip = el("div", "evidence-strip");
+      items.forEach((item) => strip.appendChild(el("span", "evidence", item)));
+      return strip;
+    }
+
+    function renderVariantB() {
+      const wrapper = el("div", "split");
+      Object.values(repos).forEach((repo) => {
+        const column = el("section", "repo-column");
+        const panel = el("div", "panel");
+        const header = el("div", "panel-header");
+        header.appendChild(el("h2", "panel-title", repo.label));
+        header.appendChild(el("span", "panel-note", repo.revision.slice(0, 12)));
+        panel.appendChild(header);
+        const list = el("div", "mini-list");
+        [
+          ["아키타입", repo.archetype],
+          ["비교 포인트", repo.contrast],
+          ["핵심 판단", repo.coreFinding],
+          ["대표 근거", repo.evidenceSummary.join(" / ")]
+        ].forEach(([label, value]) => {
+          const row = el("div", "mini-row");
+          row.appendChild(el("div", "mini-label", label));
+          row.appendChild(el("div", "mini-value", value));
+          list.appendChild(row);
+        });
+        panel.appendChild(list);
+        column.appendChild(panel);
+        column.appendChild(renderRepoMatrix(repo));
+        wrapper.appendChild(column);
+      });
+      return wrapper;
+    }
+
+    function renderRepoMatrix(repo) {
+      const panel = el("section", "panel");
+      const header = el("div", "panel-header");
+      header.appendChild(el("h2", "panel-title", "Step output summary"));
+      header.appendChild(el("span", "panel-note", "축약 보기"));
+      panel.appendChild(header);
+
+      const table = el("table", "matrix");
+      const thead = document.createElement("thead");
+      const tr = document.createElement("tr");
+      ["Step", "Mode", "Output shape"].forEach((head) => tr.appendChild(el("th", "", head)));
+      thead.appendChild(tr);
+      table.appendChild(thead);
+      const tbody = document.createElement("tbody");
+      pipelineSteps.forEach((step) => {
+        const data = repo.steps[step.id];
+        const row = document.createElement("tr");
+        row.appendChild(el("td", "", step.name));
+        row.appendChild(el("td", "", modeLabel(step.mode)));
+        row.appendChild(el("td", "", summarizeOutput(data.output)));
+        tbody.appendChild(row);
+      });
+      table.appendChild(tbody);
+      panel.appendChild(table);
+      return panel;
+    }
+
+    function summarizeOutput(output) {
+      if (output.deployable_candidates) return `deployable=${output.deployable_candidates.join(", ")}`;
+      if (output.facts) return `${output.facts.length} typed facts`;
+      if (output.high_signal_files) return `${output.high_signal_files.length} high-signal files`;
+      if (output.markdown_sections) return `${output.markdown_sections.length} report sections, verdict=${output.final_verdict}`;
+      if (output.passed !== undefined) return `${output.passed} claims passed, ${output.warnings.length} warnings`;
+      return Object.keys(output).slice(0, 3).join(", ");
+    }
+
+    function renderVariantC(repo) {
+      const wrapper = el("div", "");
+      wrapper.appendChild(renderRepoSummary(repo));
+      const panel = el("section", "panel");
+      const header = el("div", "panel-header");
+      header.appendChild(el("h2", "panel-title", "Evidence and decision timeline"));
+      header.appendChild(el("span", "panel-note", "어디서 결정론과 LLM을 나누는지 확인"));
+      panel.appendChild(header);
+      const timeline = el("div", "timeline");
+      pipelineSteps.forEach((step, index) => {
+        const data = repo.steps[step.id];
+        const row = el("div", "timeline-row");
+        const axis = el("div", "timeline-axis");
+        axis.appendChild(el("span", "timeline-dot"));
+        axis.appendChild(el("span", "", `${index + 1}. ${modeLabel(step.mode)}`));
+        const content = el("div", "timeline-content");
+        content.appendChild(el("strong", "", step.name));
+        content.appendChild(el("p", "", `${step.summary} Output: ${summarizeOutput(data.output)}.`));
+        content.appendChild(renderEvidenceStrip(data.evidence.slice(0, 3)));
+        row.appendChild(axis);
+        row.appendChild(content);
+        timeline.appendChild(row);
+      });
+      panel.appendChild(timeline);
+      wrapper.appendChild(panel);
+      return wrapper;
+    }
+
+    function render() {
+      const repo = repos[activeRepo];
+      const variant = getVariant();
+      const variantMeta = variants.find((item) => item.id === variant);
+      variantLabel.textContent = `${variantMeta.id} - ${variantMeta.name}`;
+      root.innerHTML = "";
+      if (variant === "A") root.appendChild(renderVariantA(repo));
+      if (variant === "B") root.appendChild(renderVariantB());
+      if (variant === "C") root.appendChild(renderVariantC(repo));
+
+      document.querySelectorAll("[data-repo]").forEach((button) => {
+        button.classList.toggle("active", button.dataset.repo === activeRepo);
+      });
+    }
+
+    document.querySelectorAll("[data-repo]").forEach((button) => {
+      button.addEventListener("click", () => {
+        activeRepo = button.dataset.repo;
+        activeStep = "snapshot";
+        render();
+      });
+    });
+
+    document.getElementById("prev-variant").addEventListener("click", () => cycleVariant(-1));
+    document.getElementById("next-variant").addEventListener("click", () => cycleVariant(1));
+
+    window.addEventListener("keydown", (event) => {
+      const target = event.target;
+      const isTyping = target && (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      );
+      if (isTyping) return;
+      if (event.key === "ArrowLeft") cycleVariant(-1);
+      if (event.key === "ArrowRight") cycleVariant(1);
+    });
+
+    window.addEventListener("popstate", render);
+    render();
+  </script>
+</body>
+</html>

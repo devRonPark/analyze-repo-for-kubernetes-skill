@@ -229,6 +229,32 @@ class SkillPackageTests(unittest.TestCase):
         ]:
             self.assertIn(term, combined)
 
+    def test_targetless_slash_command_uses_two_step_ask_user_question(self):
+        text = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in [
+                ROOT / "SKILL.md",
+                ROOT / "references/source-intake-state.md",
+                ROOT / "references/interview-first-intake.md",
+                ROOT / "tests/scenarios.md",
+            ]
+        )
+        for term in [
+            "source_method_required",
+            "target_value_required",
+            "request_user_input",
+            "소스를 어떻게 제공하시겠어요?",
+            "Repository URL",
+            "Local directory path",
+            "Source archive",
+            "분석할 GitHub 또는 Git repository URL을 입력해 주세요.",
+            "분석할 local directory path를 입력해 주세요.",
+            "분석할 ZIP, tar, tar.gz 또는 tgz archive path를 입력해 주세요.",
+            "first source-method question and second target-value question never occur in the same turn",
+        ]:
+            self.assertIn(term, text)
+        self.assertNotIn("분석할 Git URL, Local path 또는 Source archive를 알려 주세요.", text)
+
     def test_resolved_analysis_request_contract(self):
         text = "\n".join(
             path.read_text(encoding="utf-8")
@@ -240,6 +266,8 @@ class SkillPackageTests(unittest.TestCase):
         )
         for term in [
             "ResolvedAnalysisRequest",
+            "source_method_required",
+            "target_value_required",
             "purpose_required",
             "analysis_ready",
             "intent",
@@ -253,7 +281,7 @@ class SkillPackageTests(unittest.TestCase):
             "이관 문제점 점검",
             "전체 상세 보고서",
             "기본 분석으로 진행",
-            "Target question and purpose question never occur in the same turn",
+            "source-method, target-value and purpose questions never occur in the same turn",
             "Never ask the user to select `summary`, `detailed`, `provider` or `phase`",
         ]:
             self.assertIn(term, text)
@@ -264,11 +292,13 @@ class SkillPackageTests(unittest.TestCase):
         state = (ROOT / "references/source-intake-state.md").read_text(encoding="utf-8")
         for term in [
             "PreToolUse",
-            "target_required",
+            "source_method_required",
+            "target_value_required",
             "purpose_required",
             "analysis_ready",
             "permissionDecision",
-            "Target 확정 전에는 repository discovery tool을 사용할 수 없습니다",
+            "Source 제공 방식 확정 전에는 repository discovery tool을 사용할 수 없습니다",
+            "Target 값 확정 전에는 repository discovery tool을 사용할 수 없습니다",
             "bootstrap read",
         ]:
             self.assertIn(term, hook + manifest + state)
@@ -397,6 +427,106 @@ class SkillPackageTests(unittest.TestCase):
             "설계 차단 항목", "영향 범위", "Kubernetes 설계 입력 상태",
         ]:
             self.assertIn(term, text)
+
+    def test_adr_records_evidence_patterns_as_collection_rules(self):
+        adr = ROOT / "ADR.md"
+        self.assertTrue(adr.is_file(), "ADR.md")
+        text = adr.read_text(encoding="utf-8")
+        for term in [
+            "# 근거 패턴은 판단 규칙이 아니라 수집 규칙으로 사용한다",
+            "상태: accepted",
+            "line-addressable typed evidence",
+            "production readiness",
+            "deployable ownership",
+            "default deployment path",
+            "requiredness",
+            "LLM-centered triage",
+            "deterministic verifier",
+            "unsupported claim",
+            "invalid citation",
+            "schema drift",
+            "secret leakage",
+            "maintained pattern",
+        ]:
+            self.assertIn(term, text)
+
+    def test_evidence_pattern_packs_reference_contract(self):
+        reference = ROOT / "references/evidence-pattern-packs.md"
+        self.assertTrue(reference.is_file(), "references/evidence-pattern-packs.md")
+        text = reference.read_text(encoding="utf-8")
+        for term in [
+            "# Evidence Pattern Packs",
+            "Universal scanner",
+            "Docker",
+            "Compose",
+            "Kubernetes",
+            "Helm",
+            "Kustomize",
+            "GitHub Actions",
+            "Java",
+            "Node",
+            "Python",
+            "Go",
+            ".NET",
+            "Ruby/Rails",
+            "PHP/Laravel",
+            "Rust",
+            "Procfile",
+            "fly.toml",
+            "render.yaml",
+            "railway.toml",
+            "Cloud Foundry",
+            "Serverless",
+            "Nx",
+            "Turbo",
+            "Makefile",
+            "Taskfile",
+            "LLM-discovered hint 승격 기준",
+            "근거 수집",
+            "판단하지 않는다",
+        ]:
+            self.assertIn(term, text)
+
+    def test_evidence_collection_pipeline_contract(self):
+        text = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in [
+                ROOT / "SKILL.md",
+                ROOT / "references/workflow.md",
+                ROOT / "references/evidence-pattern-packs.md",
+            ]
+        )
+        for term in [
+            "Universal Scanner -> Evidence Pattern Packs -> LLM Triage/Reasoning -> Deterministic Verifier -> Report",
+            "deterministic collection",
+            "evidence만",
+            "component decision",
+            "LLM triage",
+            "schema",
+            "citation validity",
+            "최종 방어선",
+            "package manifest",
+            "dependency",
+            "script",
+            "Docker/Compose",
+            "CI job",
+            "candidate evidence",
+            "추정됨",
+            "미확인",
+            "상충됨",
+        ]:
+            self.assertIn(term, text)
+
+    def test_new_scenarios_cover_evidence_pattern_edge_cases(self):
+        scenarios = (ROOT / "tests/scenarios.md").read_text(encoding="utf-8")
+        for term in [
+            "Dockerfile은 없지만 app evidence가 충분한 경우",
+            "package manifest는 있지만 deployable runtime이 없는 경우",
+            "Compose service가 production baseline이 아니라 local support인 경우",
+            "monorepo에서 workspace/package-manager conflict가 있는 경우",
+            "verifier가 invalid citation을 잡는 경우",
+        ]:
+            self.assertIn(term, scenarios)
 
     def test_report_validator_accepts_component_briefing(self):
         result = self.run_report_validator(VALID_SUMMARY)

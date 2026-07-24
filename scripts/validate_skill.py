@@ -7,11 +7,13 @@ import sys
 from pathlib import Path
 
 REQUIRED = [
+    "ADR.md",
     "SKILL.md",
     "README.md",
     "agents/openai.yaml",
     "hooks.json",
     "references/workflow.md",
+    "references/evidence-pattern-packs.md",
     "references/codex-ui-integration.md",
     "references/interview-first-intake.md",
     "references/source-intake-state.md",
@@ -43,6 +45,8 @@ REQUIRED_TERMS = [
     "Repository URL", "Local path", "Source archive", "Slash Command Input",
     "ResolvedAnalysisRequest", "analysis_ready", "빠른 구조 파악", "전체 상세 보고서",
     "PreToolUse", "best-effort", "Target Gate",
+    "Universal Scanner -> Evidence Pattern Packs -> LLM Triage/Reasoning -> Deterministic Verifier -> Report",
+    "deterministic collection", "candidate evidence", "citation validity",
 ]
 
 
