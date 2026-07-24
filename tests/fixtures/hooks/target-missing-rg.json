@@ -1,0 +1,9 @@
+{
+  "hookEventName": "PreToolUse",
+  "threadId": "missing-rg",
+  "userPrompt": "/analyze-repo-for-kubernetes",
+  "toolName": "shell_command",
+  "toolInput": {
+    "command": "pwd && sed -n '1,260p' /home/user/.agents/skills/analyze-repo-for-kubernetes/SKILL.md && rg --files /tmp"
+  }
+}

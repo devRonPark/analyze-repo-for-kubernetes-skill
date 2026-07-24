@@ -1,0 +1,30 @@
+{
+  "description": "Target Gate hook template for analyze-repo-for-kubernetes.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 scripts/codex_target_gate_hook.py",
+            "timeout": 2,
+            "statusMessage": "Kubernetes 분석 대상 확인 중"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 scripts/codex_target_gate_hook.py",
+            "timeout": 2,
+            "statusMessage": "Kubernetes 분석 대상 확인 중"
+          }
+        ]
+      }
+    ]
+  }
+}

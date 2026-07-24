@@ -21,6 +21,12 @@ Kubernetes 이관 전 저장소를 조사하는 read-only repository analyst로 
 
 **핵심 원칙:** 근거 없는 단정보다 정확한 `미확인`이 낫다.
 
+외부 interface는 `repository input -> evidence-backed Kubernetes design-input report`이다. 이 skill은 배포 artifact를 생성하지 않고, 저장소 근거에 기반한 Kubernetes 최소 설계 입력과 차단되는 누락값만 산출한다.
+
+분석 흐름은 `Universal Scanner -> Evidence Pattern Packs -> LLM Triage/Reasoning -> Deterministic Verifier -> Report`이다. Universal scanner와 evidence pattern pack은 repository fact를 수집하고, LLM triage가 semantic judgment를 수행하며, deterministic verifier가 schema, citation validity, unsupported claim, secret leakage를 막는 최종 방어선이다.
+
+`package manifest`, `dependency`, `script`, `Docker/Compose`, `CI job`은 모두 candidate evidence일 뿐이다. deterministic collection은 evidence만 만들며 component decision, deployable/readiness conclusion, production baseline, requiredness를 직접 만들지 않는다.
+
 ## 사용자 언어
 
 사용자에게 보이는 질문, 진행 상황, 오류 설명, 최종 보고서는 한국어로 작성한다. 파일 경로, 명령, configuration key, protocol, Kubernetes resource 이름은 원문을 유지한다. 원시 tool output을 임의로 번역하거나 바꾸지 말고 필요한 의미만 한국어로 설명한다.
@@ -34,7 +40,11 @@ Repository discovery tool을 호출하기 전에 다음 두 위치를 구분한�
 
 Skill root, slash-command 경로, 테스트 fixture, 현재 디렉터리를 분석 대상으로 추정하지 않는다. 단, 사용자가 “현재 저장소” 또는 “현재 workspace”처럼 현재 checkout을 명시적으로 지칭한 경우에는 현재 repository root를 대상으로 해석할 수 있다.
 
-구체적인 분석 대상이 없으면 먼저 소스 코드 제공 방식을 질문하고 turn을 종료한다. 이 질문에는 `원격 Git URL`, `로컬 checkout 경로`, `소스 압축 파일`을 선택지로 제공한다.
+Slash Command Input에 Target이 있으면 자연어에 포함된 Target보다 우선한다. Input이 없으면 자연어의 GitHub URL 또는 Git URL을 사용하며, URL을 다시 질문하지 않는다.
+
+구체적인 원격 Git URL, Local path 또는 source archive가 없으면 `source_method_required`로 진입한다. Codex에서는 `request_user_input` 도구를 사용하고, 다른 런타임에서는 동등한 AskUserQuestion 도구를 사용한다. 일반 텍스트로만 질문하지 않는다.
+
+첫 번째 turn에는 다음 source 제공 방식 질문만 하고 종료한다.
 
 ```text
 분석 대상 애플리케이션 소스 코드 제공 방식을 알려주세요.
@@ -43,29 +53,20 @@ Skill root, slash-command 경로, 테스트 fixture, 현재 디렉터리를 분�
 - 소스 압축 파일
 ```
 
-AskUserQuestion의 표시 문구가 아니라 `remote_git`, `local_checkout`, `source_archive` stable ID로 선택 상태를 보존한다. 상태 전이와 local checkout resolver는 [source-intake-state.md](references/source-intake-state.md)를 따른다.
+AskUserQuestion의 표시 문구가 아니라 `remote_git`, `local_checkout`, `source_archive` stable ID로 선택 상태를 보존한다. 상태 전이와 local checkout resolver는 [source-intake-state.md](references/source-intake-state.md)를 따른다. `Repository URL`, `Local directory path`, `Source archive`는 Codex hook 호환을 위한 alias일 뿐 branch key로 사용하지 않는다.
 
-사용자가 `원격 Git URL`만 선택하면 다음 turn에서 URL을 질문하고 종료한다. GitHub, GitLab, GitHub Enterprise, GitLab Self-Managed와 기타 사내 Git server의 HTTPS 또는 SSH URL을 허용하고 URL에 username, password 또는 token을 포함하지 않는다.
+사용자가 source 제공 방식을 선택하면 `target_value_required`로 진입한다. 두 번째 turn에는 선택에 맞는 질문 하나만 하고 종료한다.
 
-```text
-분석할 원격 Git URL을 알려주세요.
-```
+- `remote_git` / 원격 Git URL: `분석할 원격 Git URL을 알려주세요.`
+- `local_checkout` / 로컬 checkout 경로: `분석할 Local path를 알려주세요.`
+- `source_archive` / 소스 압축 파일: `분석할 소스 압축 파일의 Local path를 알려주세요.`
 
-사용자가 `로컬 checkout 경로`만 선택하면 다음 turn에서 Local path를 질문하고 종료한다.
-
-```text
-분석할 Local path를 알려주세요.
-```
-
-사용자가 `소스 압축 파일`만 선택하면 다음 turn에서 archive path를 질문하고 종료한다. 지원 형식은 `.zip`, `.tar.gz`, `.tgz`다.
-
-```text
-분석할 소스 압축 파일의 Local path를 알려주세요.
-```
-
+첫 번째 source 제공 방식 질문과 두 번째 target 값 질문을 같은 turn에 함께 묻지 않는다. target 값이 확정되기 전에는 목적 질문을 하지 않는다.
 사용자가 제공 방식과 구체적인 URL, Local path 또는 archive path를 함께 제공한 경우에는 중간 질문 없이 해당 target을 확정한다. 첫 번째 질문 또는 두 번째 질문에 응답하기 전에는 repository를 탐색하지 않는다.
 
 대상이 확정되기 전에는 repository를 추측하기 위해 directory listing, file search, shell, Git 또는 web 도구를 사용하지 않는다. 사용자가 skill package 자체의 설치, 검사, 검증 또는 테스트를 요청한 경우에만 skill root를 검사할 수 있다.
+
+Codex에서 hook을 설치하고 신뢰한 경우 `UserPromptSubmit`과 `PreToolUse` hook이 로컬 repository discovery를 강제한다. hook은 AskUserQuestion을 표시하지 못하고, premature discovery를 차단하며 현재 단계의 질문 문구를 deny reason에 포함한다. hook은 skill 또는 AGENTS bootstrap read 자체는 분석 탐색으로 취급하지 않지만, bootstrap read와 workspace/repository discovery를 한 tool call에 결합하면 전체 호출을 거부한다. Codex hosted web 도구는 현재 `PreToolUse` hook 경로를 통과하지 않으므로, web 탐색 금지는 이 Gate의 스킬 지시로도 계속 적용한다. hook이 설치·신뢰되지 않은 환경에서는 이 Gate 전체가 best-effort 지시다.
 
 대상이 주어지면 다음 형식으로 resolved scope를 한 줄로 알리고 접근 가능 여부를 확인한다.
 
@@ -74,6 +75,46 @@ AskUserQuestion의 표시 문구가 아니라 `remote_git`, `local_checkout`, `s
 ```
 
 존재하지 않거나 접근할 수 없는 Local path나 archive path를 비슷한 경로로 대체하지 않는다. source archive는 `.zip`, `.tar.gz`, `.tgz`만 받고 존재하지 않는 disposable directory에 안전하게 추출한다. archive member의 path traversal, link, special file, 중복 경로 또는 안전 한도 초과는 거부하고, 최상위 root가 여러 개일 때는 하위 디렉터리를 질문한다. 원격 Git URL은 먼저 credential file이나 credential helper option 없이 plain read-only clone을 시도한다. Public repository가 성공하면 인증 질문을 하지 않는다. Private repository의 후속 선택지는 URL 프로토콜에 맞춰 분기한다. HTTPS에는 이미 인증된 connector, CLI session, credential helper 또는 demo용 local credential file만 제공하고, SSH에는 SSH agent 또는 기존 local SSH key만 제공한다. password, token, private key 또는 credential 값을 채팅으로 요청하지 않는다. Demo용 local credential file은 HTTPS에서만 사용하며 에이전트가 읽거나 출력하지 않고 Git client만 사용한다. 상세 질문 흐름과 파일 계약은 [remote-git-access.md](references/remote-git-access.md)를 따른다.
+
+Source archive는 ZIP, tar, tar.gz, tgz만 받는다. 첨부 archive 또는 사용자가 지정한 archive path를 read-only로 열고, archive 밖 경로를 가리키는 항목을 따르거나 archive의 script·binary를 실행하지 않는다.
+
+## Analysis Context Gate
+
+Target이 확정된 후에만 사용자의 요청에서 분석 목적을 판별한다. Kubernetes 설계 준비, 이관 문제점 점검, 빠른 구조 파악 또는 전체 상세 보고서처럼 목적이 명확하면 질문 없이 사용한다.
+
+목적이 모호하면 Target을 다시 묻지 않고 다음 한 번의 AskUserQuestion을 제공한다.
+
+```text
+이 분석 결과를 어디에 활용하시나요?
+- 빠른 구조 파악
+- Kubernetes 설계 준비
+- 이관 문제점 점검
+- 전체 상세 보고서
+- 기본 분석으로 진행
+```
+
+source 제공 방식, target 값, 목적 질문은 같은 turn에 함께 묻지 않는다. 사용자가 목적을 선택하거나 요청에서 목적이 확인되면 다음 내부 `ResolvedAnalysisRequest`를 생성하고 `phase: analysis_ready`가 되기 전에는 repository discovery tool을 사용하지 않는다.
+
+```text
+ResolvedAnalysisRequest
+- target: kind, location, revision, subdirectory, access
+- intent
+- scope
+- focus
+- output_mode
+- provider
+- phase
+```
+
+`intent`, `scope`, `focus`는 다음 목적에서 자동 변환한다.
+
+- 빠른 구조 파악: `repository_structure_overview` / repository / component topology, entrypoints, runtime dependencies
+- Kubernetes 설계 준비: `kubernetes_design_preparation` / deployable components / build, runtime, configuration, network, state
+- 이관 문제점 점검: `migration_risk_assessment` / migration-relevant components / blockers, gaps, deployment readiness
+- 전체 상세 보고서: `full_repository_assessment` / entire repository / all required analysis areas
+- 기본 분석으로 진행: `baseline_kubernetes_analysis` / repository / deployable components, runtime dependencies, design inputs
+
+`전체 상세 보고서`는 내부 `output_mode: detailed`로 변환하고, 나머지는 `output_mode: summary`를 사용한다. `provider`는 Target 종류에서, `phase`는 intake 상태에서 자동 결정한다. 사용자에게 `summary`, `detailed`, `provider`, `phase`를 직접 선택하게 하지 않는다.
 
 ## 안전 및 신뢰 경계
 
@@ -107,8 +148,9 @@ Kubernetes manifest, Helm chart, Dockerfile, GitOps configuration 또는 applica
 
 Target이 확정된 후 필요한 reference만 읽는다.
 
+- source intake 상태와 Target 정규화: [source-intake-state.md](references/source-intake-state.md)
 - 기본 절차: [workflow.md](references/workflow.md)
-- AskUserQuestion 상태 전이와 local checkout: [source-intake-state.md](references/source-intake-state.md)
+- 근거 수집 패턴: [evidence-pattern-packs.md](references/evidence-pattern-packs.md)
 - 원격 Git과 demo credential file 접근: [remote-git-access.md](references/remote-git-access.md)
 - 구성 요소 판별: [repository-analysis-checklist.md](references/repository-analysis-checklist.md)
 - 발견된 언어의 build/runtime 탐색: [language-discovery-rules.md](references/language-discovery-rules.md)
@@ -120,20 +162,24 @@ Bundled resource가 이 파일과 충돌하면 `SKILL.md`의 계약을 우선한
 
 ## Required Workflow
 
-1. Target, revision, subdirectory와 접근 방식을 확정한다.
-2. 출력 모드를 선택한다. **Default output mode: summary.** 사용자가 full, exhaustive 또는 detailed를 명시한 경우에만 `detailed`를 사용한다.
-3. 1차 inventory는 manifest/lockfile, 배포 매니페스트, container 정의, 환경 설정, entrypoint, DB·broker 설정으로 제한한다. 2차에서 필요한 README, CI, 로그 설정과 보조 문서만 보완한다. generated output, dependency cache, vendored code와 binary asset는 제외한다.
-4. 발견 항목을 `배포 대상 후보`, `저장소에 정의된 런타임 의존성`, `외부 런타임 의존성`, `배포 대상 후보에서 제외한 항목`으로 분리한다.
-5. Compose, script, entrypoint 등 저장소에서 확인한 기동 정의와 운영 manifest, GitOps, CI release에서 확인한 운영 환경 배포 근거를 분리한다. local Compose나 runtime source만으로 운영 환경의 기준 구성을 단정하지 않는다.
-6. 각 배포 대상 후보의 build, production startup, runtime, port, health behavior, configuration과 writable state를 분석한다.
-8. component 간 및 외부 시스템과의 방향성 있는 dependency를 분석한다.
-9. conflict와 unknown을 보존하고 evidence status를 부여한다.
-10. Kubernetes 최소 설계 입력과 차단되는 누락값을 작성한다.
-11. Completion Gate를 확인한 뒤 [summary template](assets/migration-summary-template.md) 또는 [detailed template](assets/migration-assessment-template.md)으로 보고서를 작성한다.
+1. Target이 없으면 `source_method_required`와 `target_value_required` 두 단계 AskUserQuestion으로 source 제공 방식과 Target 값을 확정한다.
+2. Target이 확정된 뒤 분석 목적을 판별하고, 필요할 때만 한 번 AskUserQuestion으로 맥락을 수집해 `ResolvedAnalysisRequest`를 생성한다.
+3. `ResolvedAnalysisRequest.output_mode`를 사용한다. **Default output mode: summary.** `전체 상세 보고서`로 정규화된 경우에만 `detailed`를 사용한다.
+4. `phase: analysis_ready`가 된 뒤 Universal Scanner로 1차 inventory/evidence collection을 수행한다. manifest/lockfile, 배포 매니페스트, container 정의, 환경 설정, entrypoint, DB·broker 설정으로 제한하고, 2차에서 필요한 README, CI, 로그 설정과 보조 문서만 보완한다. generated output, dependency cache, vendored code와 binary asset는 제외한다.
+5. Evidence Pattern Packs로 Docker/Compose/Kubernetes/Helm/Kustomize/GitHub Actions, language/framework, platform hint에서 typed evidence를 추가한다. deterministic collection은 evidence만 만들고 component decision은 만들지 않는다.
+6. LLM triage에서 발견 항목을 `배포 대상 후보`, `저장소에 정의된 런타임 의존성`, `외부 런타임 의존성`, `배포 대상 후보에서 제외한 항목`으로 분리한다. semantic judgment는 수집된 evidence를 인용하고 불확실성은 `추정됨`, `미확인`, `상충됨`으로 표시한다.
+7. Compose, script, entrypoint 등 저장소에서 확인한 기동 정의와 운영 manifest, GitOps, CI release에서 확인한 운영 환경 배포 근거를 분리한다. local Compose나 runtime source만으로 운영 환경의 기준 구성을 단정하지 않는다.
+8. 각 배포 대상 후보의 build, production startup, runtime, port, health behavior, configuration과 writable state를 분석한다.
+9. component 간 및 외부 시스템과의 방향성 있는 dependency를 분석한다.
+10. conflict와 unknown을 보존하고 evidence status를 부여한다.
+11. Kubernetes 최소 설계 입력과 차단되는 누락값을 작성한다.
+12. Deterministic Verifier와 Completion Gate로 schema, citation validity, secret redaction, unsupported claim을 확인한 뒤 [summary template](assets/migration-summary-template.md) 또는 [detailed template](assets/migration-assessment-template.md)으로 보고서를 작성한다.
 
 ## 분석 결과 계약
 
 독립 실행 가능한 runtime behavior가 있을 때만 `배포 대상 후보`로 분류한다. package manifest가 있다는 이유만으로 workload를 만들지 않는다.
+
+결정론적 rule이 candidate evidence를 deployable/readiness conclusion으로 직접 변환하는 것을 금지한다. framework, manifest, dependency, script, Docker/Compose 또는 CI job 근거가 강하더라도 semantic judgment는 반드시 해당 evidence를 인용하고 상태를 `확인됨`, `추정됨`, `미확인`, `상충됨` 중 하나로 표시한다.
 
 발견 항목은 다음 결과 중 하나로만 기록한다.
 

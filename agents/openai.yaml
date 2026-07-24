@@ -1,4 +1,4 @@
 interface:
   display_name: "Kubernetes 저장소 분석기"
   short_description: "근거 기반으로 Kubernetes 이관 준비 상태를 분석합니다"
-  default_prompt: "Use $analyze-repo-for-kubernetes to analyze this repository in summary mode with source evidence, missing design inputs, and no deployment artifact generation."
+  default_prompt: "Use $analyze-repo-for-kubernetes to analyze the current repository for Kubernetes design preparation with source evidence, missing design inputs, and no deployment artifact generation."

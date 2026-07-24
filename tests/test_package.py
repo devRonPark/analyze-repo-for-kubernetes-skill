@@ -216,7 +216,8 @@ class SkillPackageTests(unittest.TestCase):
     def test_target_resolution_gate_contract(self):
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
         intake = (ROOT / "references/interview-first-intake.md").read_text(encoding="utf-8")
-        combined = skill + "\n" + intake
+        state = (ROOT / "references/source-intake-state.md").read_text(encoding="utf-8")
+        combined = skill + "\n" + intake + "\n" + state
         for term in [
             "Target Resolution Gate",
             "skill installation directory",
@@ -231,10 +232,125 @@ class SkillPackageTests(unittest.TestCase):
             "분석할 소스 압축 파일의 Local path를 알려주세요.",
             "Remote Git URL",
             "Local path",
+            "Source archive",
+            "Slash Command Input",
+            "ZIP, tar, tar.gz, tgz",
             "directory listing",
             "tests/",
         ]:
             self.assertIn(term, combined)
+
+    def test_targetless_slash_command_uses_two_step_ask_user_question(self):
+        text = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in [
+                ROOT / "SKILL.md",
+                ROOT / "references/source-intake-state.md",
+                ROOT / "references/interview-first-intake.md",
+                ROOT / "tests/scenarios.md",
+            ]
+        )
+        for term in [
+            "source_method_required",
+            "target_value_required",
+            "request_user_input",
+            "분석 대상 애플리케이션 소스 코드 제공 방식을 알려주세요.",
+            "remote_git",
+            "local_checkout",
+            "source_archive",
+            "Repository URL",
+            "Source archive",
+            "분석할 원격 Git URL을 알려주세요.",
+            "분석할 Local path를 알려주세요.",
+            "분석할 소스 압축 파일의 Local path를 알려주세요.",
+            "first source-method question and second target-value question never occur in the same turn",
+        ]:
+            self.assertIn(term, text)
+        self.assertNotIn("분석할 Git URL, Local path 또는 Source archive를 알려 주세요.", text)
+
+    def test_resolved_analysis_request_contract(self):
+        text = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in [
+                ROOT / "SKILL.md",
+                ROOT / "references/source-intake-state.md",
+                ROOT / "references/workflow.md",
+            ]
+        )
+        for term in [
+            "ResolvedAnalysisRequest",
+            "source_method_required",
+            "target_value_required",
+            "purpose_required",
+            "analysis_ready",
+            "intent",
+            "scope",
+            "focus",
+            "output_mode",
+            "provider",
+            "phase",
+            "빠른 구조 파악",
+            "Kubernetes 설계 준비",
+            "이관 문제점 점검",
+            "전체 상세 보고서",
+            "기본 분석으로 진행",
+            "source-method, target-value and purpose questions never occur in the same turn",
+            "Never ask the user to select `summary`, `detailed`, `provider` or `phase`",
+        ]:
+            self.assertIn(term, text)
+
+    def test_codex_target_gate_hook_contract(self):
+        hook = (ROOT / "scripts/codex_target_gate_hook.py").read_text(encoding="utf-8")
+        manifest = (ROOT / "hooks.json").read_text(encoding="utf-8")
+        state = (ROOT / "references/source-intake-state.md").read_text(encoding="utf-8")
+        for term in [
+            "PreToolUse",
+            "source_method_required",
+            "target_value_required",
+            "purpose_required",
+            "analysis_ready",
+            "permissionDecision",
+            "Source 제공 방식 확정 전에는 repository discovery tool을 사용할 수 없습니다",
+            "Target 값 확정 전에는 repository discovery tool을 사용할 수 없습니다",
+            "bootstrap read",
+        ]:
+            self.assertIn(term, hook + manifest + state)
+
+    def test_opt_in_codex_cli_validator_contract(self):
+        validator = (ROOT / "scripts/validate_codex_intake.py").read_text(encoding="utf-8")
+        runbook = (ROOT / "references/codex-ui-integration.md").read_text(encoding="utf-8")
+        for term in [
+            "CODEX_INTEGRATION",
+            "--ephemeral",
+            "--sandbox",
+            "projectless ASCII task",
+            "workspace 탐색 command 없음",
+        ]:
+            self.assertIn(term, validator + runbook)
+
+    def test_user_facing_invocation_examples_hide_internal_choices(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        prompt = (ROOT / "agents/openai.yaml").read_text(encoding="utf-8")
+        execution = readme.split("## 실행", 1)[1].split("## 결과 검사", 1)[0]
+
+        for term in [
+            "/analyze-repo-for-kubernetes",
+            "GitHub URL이 포함된 자연어 요청",
+            "https://github.com/example/payments-service.git",
+            "/workspace/payments-service",
+            "/downloads/payments-service.tar.gz",
+            "빠른 구조 파악",
+            "Kubernetes 설계 준비",
+            "이관 문제점 점검",
+            "전체 상세 보고서",
+            "기본 분석으로 진행",
+        ]:
+            self.assertIn(term, execution)
+
+        self.assertNotIn("summary 모드", execution)
+        self.assertNotIn("detailed 모드", execution)
+        self.assertNotIn("summary mode", prompt)
+        self.assertNotIn("detailed mode", prompt)
 
     def test_demo_credential_file_contract(self):
         access = (ROOT / "references/remote-git-access.md").read_text(encoding="utf-8")
@@ -485,6 +601,106 @@ class SkillPackageTests(unittest.TestCase):
             "설계 차단 항목", "영향 범위", "Kubernetes 설계 입력 상태",
         ]:
             self.assertIn(term, text)
+
+    def test_adr_records_evidence_patterns_as_collection_rules(self):
+        adr = ROOT / "ADR.md"
+        self.assertTrue(adr.is_file(), "ADR.md")
+        text = adr.read_text(encoding="utf-8")
+        for term in [
+            "# 근거 패턴은 판단 규칙이 아니라 수집 규칙으로 사용한다",
+            "상태: accepted",
+            "line-addressable typed evidence",
+            "production readiness",
+            "deployable ownership",
+            "default deployment path",
+            "requiredness",
+            "LLM-centered triage",
+            "deterministic verifier",
+            "unsupported claim",
+            "invalid citation",
+            "schema drift",
+            "secret leakage",
+            "maintained pattern",
+        ]:
+            self.assertIn(term, text)
+
+    def test_evidence_pattern_packs_reference_contract(self):
+        reference = ROOT / "references/evidence-pattern-packs.md"
+        self.assertTrue(reference.is_file(), "references/evidence-pattern-packs.md")
+        text = reference.read_text(encoding="utf-8")
+        for term in [
+            "# Evidence Pattern Packs",
+            "Universal scanner",
+            "Docker",
+            "Compose",
+            "Kubernetes",
+            "Helm",
+            "Kustomize",
+            "GitHub Actions",
+            "Java",
+            "Node",
+            "Python",
+            "Go",
+            ".NET",
+            "Ruby/Rails",
+            "PHP/Laravel",
+            "Rust",
+            "Procfile",
+            "fly.toml",
+            "render.yaml",
+            "railway.toml",
+            "Cloud Foundry",
+            "Serverless",
+            "Nx",
+            "Turbo",
+            "Makefile",
+            "Taskfile",
+            "LLM-discovered hint 승격 기준",
+            "근거 수집",
+            "판단하지 않는다",
+        ]:
+            self.assertIn(term, text)
+
+    def test_evidence_collection_pipeline_contract(self):
+        text = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in [
+                ROOT / "SKILL.md",
+                ROOT / "references/workflow.md",
+                ROOT / "references/evidence-pattern-packs.md",
+            ]
+        )
+        for term in [
+            "Universal Scanner -> Evidence Pattern Packs -> LLM Triage/Reasoning -> Deterministic Verifier -> Report",
+            "deterministic collection",
+            "evidence만",
+            "component decision",
+            "LLM triage",
+            "schema",
+            "citation validity",
+            "최종 방어선",
+            "package manifest",
+            "dependency",
+            "script",
+            "Docker/Compose",
+            "CI job",
+            "candidate evidence",
+            "추정됨",
+            "미확인",
+            "상충됨",
+        ]:
+            self.assertIn(term, text)
+
+    def test_new_scenarios_cover_evidence_pattern_edge_cases(self):
+        scenarios = (ROOT / "tests/scenarios.md").read_text(encoding="utf-8")
+        for term in [
+            "Dockerfile은 없지만 app evidence가 충분한 경우",
+            "package manifest는 있지만 deployable runtime이 없는 경우",
+            "Compose service가 production baseline이 아니라 local support인 경우",
+            "monorepo에서 workspace/package-manager conflict가 있는 경우",
+            "verifier가 invalid citation을 잡는 경우",
+        ]:
+            self.assertIn(term, scenarios)
 
     def test_report_validator_accepts_component_briefing(self):
         result = self.run_report_validator(VALID_SUMMARY)

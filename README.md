@@ -2,7 +2,7 @@
 
 Qwen Code 또는 Codex가 애플리케이션 Repository를 Kubernetes 이관 관점에서 근거 기반으로 분석하도록 만드는 Agent Skill입니다.
 
-기본 출력은 의사결정 중심의 `summary` 모드입니다. 사용자가 전체 분석을 명시한 경우에만 `detailed` 모드를 사용합니다.
+분석 목적에 따라 출력 깊이를 자동으로 정합니다. 사용자가 전체 상세 보고서를 요청한 경우에만 상세 분석을 사용하고, 그 외에는 의사결정 중심의 기본 분석으로 진행합니다.
 
 ## 핵심 기능
 
@@ -74,7 +74,7 @@ bash scripts/update-qwen.sh
 
 ## 실행
 
-대상 없이 호출하면 먼저 애플리케이션 소스 코드 제공 방식을 선택하게 한 뒤, 선택한 방식에 맞는 URL 또는 Local path를 요청합니다.
+대상 없이 호출하면 AskUserQuestion으로 애플리케이션 소스 코드 제공 방식을 먼저 묻고 해당 turn을 종료합니다. Codex에서는 `request_user_input` 도구를 사용해야 합니다. 이후 선택한 방식에 맞는 URL, Local path 또는 archive path를 다음 turn에서 요청합니다.
 
 ```text
 /analyze-repo-for-kubernetes
@@ -91,21 +91,60 @@ bash scripts/update-qwen.sh
 
 `원격 Git URL`을 선택하면 `분석할 원격 Git URL을 알려주세요.`를, `로컬 checkout 경로`를 선택하면 `분석할 Local path를 알려주세요.`를, `소스 압축 파일`을 선택하면 archive path를 후속으로 질문합니다. 원격 URL에는 GitHub, GitLab 및 사내 Git server의 HTTPS 또는 SSH URL을 사용할 수 있습니다. 질문 후에는 사용자가 구체적인 대상을 입력할 때까지 파일이나 디렉터리를 탐색하지 않아야 합니다.
 
-현재 Repository를 명시적으로 분석하려면 다음처럼 실행합니다.
+사용자가 source 제공 방식을 고르면 다음 turn에서 선택에 맞는 target 값만 묻습니다.
 
 ```text
-/analyze-repo-for-kubernetes
-Use Local path: .
+분석할 원격 Git URL을 알려주세요.
 ```
-
-기본 Summary 요청:
 
 ```text
-현재 Repository를 Kubernetes 이관 관점에서 summary 모드로 분석해.
-결과를 kubernetes-migration-summary.md에 저장해.
-Kubernetes manifest와 Dockerfile은 생성하지 마.
-확인할 수 없는 정보는 미확인으로 표시해.
+분석할 Local path를 알려주세요.
 ```
+
+```text
+분석할 소스 압축 파일의 Local path를 알려주세요.
+```
+
+source 제공 방식 질문과 target 값 질문은 같은 turn에 함께 묻지 않습니다. target 값이 확정될 때까지 파일이나 디렉터리를 탐색하지 않아야 합니다.
+
+GitHub URL이 포함된 자연어 요청은 URL을 다시 묻지 않고 바로 Target으로 사용합니다.
+
+```text
+https://github.com/example/payments-service 를 Kubernetes 설계 준비에 활용할 수 있게 분석해.
+```
+
+Slash Command Input으로 Target을 제공할 수도 있습니다. Input Target은 자연어에 다른 Target이 함께 있어도 우선합니다.
+
+```text
+/analyze-repo-for-kubernetes https://github.com/example/payments-service.git
+```
+
+```text
+/analyze-repo-for-kubernetes /workspace/payments-service
+```
+
+```text
+/analyze-repo-for-kubernetes /downloads/payments-service.tar.gz
+```
+
+Source archive는 ZIP, tar, tar.gz, tgz를 지원하며 read-only로 분석합니다. 현재 Repository를 명시적으로 분석하려면 Slash Command Input에 `.`을 제공합니다.
+
+```text
+/analyze-repo-for-kubernetes .
+```
+
+Target은 있지만 활용 목적이 모호하면 다음 한 번의 질문으로 맥락을 수집합니다.
+
+```text
+이 분석 결과를 어디에 활용하시나요?
+- 빠른 구조 파악
+- Kubernetes 설계 준비
+- 이관 문제점 점검
+- 전체 상세 보고서
+- 기본 분석으로 진행
+```
+
+Kubernetes 설계 준비, 이관 문제점 점검 또는 전체 상세 보고서처럼 목적이 요청에 명확하면 이 질문 없이 분석을 시작합니다. 사용자는 출력 형식이나 내부 provider·phase를 선택할 필요가 없습니다.
 
 ## 결과 검사
 
@@ -145,6 +184,28 @@ bash scripts/install-codex.sh
 
 ```text
 ~/.agents/skills/analyze-repo-for-kubernetes
+```
+
+Codex CLI의 stable hooks 기능이 있으면 설치 스크립트는 `~/.codex/config.toml`에 이 skill만을 위한 `UserPromptSubmit` + `PreToolUse` Target Gate를 등록합니다. 등록 후 설정 검증이 실패하면 기존 설정을 복구하고 설치를 실패로 처리합니다. Codex가 처음 등록한 user hook은 `/hooks`에서 검토·신뢰해야 실행됩니다. 신뢰된 hook은 Target 미확정 상태의 로컬 repository 탐색을 차단하며, 없는 환경에서는 스킬 지시만 적용됩니다. Codex hosted web 도구는 현재 `PreToolUse` 대상이 아니므로 web 탐색 금지는 스킬 지시로 유지됩니다.
+
+WSL에서 Codex가 Windows profile을 Codex home으로 사용하면 설치 스크립트는 기존 `USERPROFILE/.codex`를 자동 선택한다. 필요한 경우 `CODEX_CONFIG_DIR`로 hook을 등록할 Codex home을 명시할 수 있다.
+
+테스트 등으로 hook 등록을 명시적으로 건너뛰려면 다음처럼 실행합니다.
+
+```bash
+CODEX_SKIP_HOOK=1 bash scripts/install-codex.sh
+```
+
+제거 시에는 이 skill이 관리한 hook과 intake cache만 제거합니다.
+
+```bash
+bash scripts/uninstall-codex.sh
+```
+
+대화형 Codex UI 검증 절차는 [codex-ui-integration.md](references/codex-ui-integration.md)를 따릅니다. 실제 CLI 검증은 인증된 환경에서만 opt-in으로 실행합니다.
+
+```bash
+CODEX_INTEGRATION=1 python3 scripts/validate_codex_intake.py
 ```
 
 ## Private Repository

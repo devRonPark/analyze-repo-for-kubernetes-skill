@@ -7,10 +7,14 @@ import sys
 from pathlib import Path
 
 REQUIRED = [
+    "ADR.md",
     "SKILL.md",
     "README.md",
     "agents/openai.yaml",
+    "hooks.json",
     "references/workflow.md",
+    "references/evidence-pattern-packs.md",
+    "references/codex-ui-integration.md",
     "references/interview-first-intake.md",
     "references/remote-git-access.md",
     "references/source-intake-state.md",
@@ -23,6 +27,9 @@ REQUIRED = [
     "assets/migration-summary-template.md",
     "assets/demo-git-credential.example.json",
     "scripts/validate_report.py",
+    "scripts/codex_target_gate_hook.py",
+    "scripts/validate_codex_intake.py",
+    "scripts/uninstall-codex.sh",
     "scripts/demo_git_readonly_clone.py",
     "scripts/source_intake.py",
     "scripts/plain_remote_git_clone.py",
@@ -42,7 +49,13 @@ REQUIRED_TERMS = [
     "실행 위치", "적용 시점",
     "배포 대상별 실행 정보", "Kubernetes 최소 설계 입력", "최소 입력 누락", "키: 값",
     "Default output mode: summary", "Target Resolution Gate",
-    "Repository URL", "Local path", "원격 Git URL", "소스 압축 파일", "local credential file",
+    "Repository URL", "Local path", "Source archive", "원격 Git URL", "소스 압축 파일",
+    "remote_git", "local_checkout", "source_archive", "local credential file",
+    "Slash Command Input",
+    "ResolvedAnalysisRequest", "analysis_ready", "빠른 구조 파악", "전체 상세 보고서",
+    "source_method_required", "target_value_required", "PreToolUse", "best-effort", "Target Gate",
+    "Universal Scanner -> Evidence Pattern Packs -> LLM Triage/Reasoning -> Deterministic Verifier -> Report",
+    "deterministic collection", "candidate evidence", "citation validity",
 ]
 
 

@@ -1,0 +1,9 @@
+{
+  "hookEventName": "PreToolUse",
+  "threadId": "target-ready",
+  "userPrompt": "/analyze-repo-for-kubernetes https://github.com/example/payments.git Kubernetes 설계 준비",
+  "toolName": "shell_command",
+  "toolInput": {
+    "command": "rg --files ."
+  }
+}
