@@ -73,7 +73,7 @@ AskUserQuestion의 표시 문구가 아니라 `remote_git`, `local_checkout`, `s
 분석 대상: <type> | <resolved target> | revision: <branch/commit/default> | subdirectory: <path 또는 .>
 ```
 
-존재하지 않거나 접근할 수 없는 Local path나 archive path를 비슷한 경로로 대체하지 않는다. 원격 Git URL은 먼저 credential file이나 credential helper option 없이 plain read-only clone을 시도한다. Public repository가 성공하면 인증 질문을 하지 않는다. Private repository에는 이미 인증된 connector, CLI session, credential helper, SSH agent, local checkout 또는 demo용 local credential file만 사용한다. password, token, private key 또는 credential 값을 채팅으로 요청하지 않는다. Demo용 local credential file은 에이전트가 읽거나 출력하지 않으며 Git client만 사용한다. 상세 질문 흐름과 파일 계약은 [remote-git-access.md](references/remote-git-access.md)를 따른다.
+존재하지 않거나 접근할 수 없는 Local path나 archive path를 비슷한 경로로 대체하지 않는다. 원격 Git URL은 먼저 credential file이나 credential helper option 없이 plain read-only clone을 시도한다. Public repository가 성공하면 인증 질문을 하지 않는다. Private repository의 후속 선택지는 URL 프로토콜에 맞춰 분기한다. HTTPS에는 이미 인증된 connector, CLI session, credential helper 또는 demo용 local credential file만 제공하고, SSH에는 SSH agent 또는 기존 local SSH key만 제공한다. password, token, private key 또는 credential 값을 채팅으로 요청하지 않는다. Demo용 local credential file은 HTTPS에서만 사용하며 에이전트가 읽거나 출력하지 않고 Git client만 사용한다. 상세 질문 흐름과 파일 계약은 [remote-git-access.md](references/remote-git-access.md)를 따른다.
 
 ## 안전 및 신뢰 경계
 

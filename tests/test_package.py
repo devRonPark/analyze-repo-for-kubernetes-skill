@@ -314,6 +314,44 @@ class SkillPackageTests(unittest.TestCase):
         self.assertNotIn("credential.helper", " ".join(command))
         self.assertNotIn("credential-file", " ".join(command))
 
+    def test_remote_git_auth_branches_by_protocol_without_collecting_secrets(self):
+        module_path = ROOT / "scripts/remote_git_auth.py"
+        spec = importlib.util.spec_from_file_location("remote_git_auth", module_path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        https = module.authentication_options("https://git.example.internal/group/project.git")
+        self.assertEqual(https["remote_scheme"], "https")
+        self.assertEqual(
+            [item["id"] for item in https["auth_methods"]],
+            ["existing_git_auth", "demo_credential_file", "alternate_source"],
+        )
+        self.assertEqual(
+            module.accept_authentication_method(
+                "https://git.example.internal/group/project.git", "demo_credential_file"
+            )["state"],
+            "awaiting_credential_file",
+        )
+
+        ssh = module.authentication_options("git@git.example.internal:group/project.git")
+        self.assertEqual(ssh["remote_scheme"], "ssh")
+        self.assertTrue(ssh["next_prompt"].startswith("SSH 원격 Git 저장소"))
+        self.assertEqual([item["id"] for item in ssh["auth_methods"]], ["ssh_agent", "alternate_source"])
+        with self.assertRaises(module.AuthenticationError):
+            module.accept_authentication_method("ssh://git@git.example.internal/group/project.git", "demo_credential_file")
+        self.assertEqual(
+            module.accept_authentication_method("ssh://git@git.example.internal/group/project.git", "ssh_agent"),
+            {
+                "state": "retry_plain_clone",
+                "remote_scheme": "ssh",
+                "auth_method": "ssh_agent",
+                "next_action": "plain_remote_git_clone",
+            },
+        )
+
     def test_output_contract(self):
         text = "\n".join(
             path.read_text(encoding="utf-8")

@@ -27,6 +27,16 @@ Expected behavior:
 - does not ask an authentication question or provide a credential file option after a successful clone
 - does not pass a credential file or credential helper configuration to the clone command
 
+## Scenario 0.2 — Private Remote Git Authentication
+
+Provide a remote Git URL only after its plain clone failed because access is unavailable.
+
+Expected behavior:
+
+- for HTTPS, offers configured Git authentication, a demo local credential-file path, or another source delivery method; asks for the file path only after its selection
+- for SSH, offers only an existing SSH agent/key or another source delivery method
+- never requests a token, password, private-key path, key passphrase, or credential-file content; never offers a credential file for SSH
+
 ## Scenario 1 — Default Summary Mode
 
 Analyze a Dockerfile-free monorepo.

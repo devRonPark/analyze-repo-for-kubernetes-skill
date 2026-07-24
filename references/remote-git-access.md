@@ -29,7 +29,7 @@ Accept HTTPS or SSH URLs for GitHub, GitLab, GitHub Enterprise, GitLab Self-Mana
 
 For every concrete remote URL, first run [plain_remote_git_clone.py](../scripts/plain_remote_git_clone.py) in a disposable directory. It invokes plain `git clone` with no credential-file argument and no credential helper configuration. It disables terminal prompts, so a public repository proceeds without an authentication question while an unavailable repository returns a safe failure.
 
-If plain clone fails because access is unavailable, ask exactly:
+If plain clone fails because access is unavailable, determine its protocol with [remote_git_auth.py](../scripts/remote_git_auth.py). Do not ask a credential question until this failure occurs. For HTTPS, ask exactly:
 
 ```text
 원격 Git 저장소에 인증이 필요합니다. 인증값을 대화에 입력하지 말고 접근 방식을 선택해 주세요.
@@ -38,11 +38,19 @@ If plain clone fails because access is unavailable, ask exactly:
 - local checkout 또는 source archive로 제공
 ```
 
-The first choice means the user configures their credential helper, CLI session or SSH agent outside the conversation and then requests a retry. The third choice returns to the source-code delivery method question.
+For SSH, ask exactly:
+
+```text
+SSH 원격 Git 저장소에 인증이 필요합니다. 인증값을 대화에 입력하지 말고 접근 방식을 선택해 주세요.
+- 현재 환경의 SSH agent 또는 SSH key 사용
+- local checkout 또는 source archive로 제공
+```
+
+For HTTPS, the first choice means the user configures their credential helper or authenticated CLI session outside the conversation and then requests a plain-clone retry. For SSH, the first choice means the user configures an SSH agent or an existing local SSH key and host verification outside the conversation, then requests a plain-clone retry. Do not ask for a private-key path, key passphrase, password, token, or credential file on the SSH route. The alternate-source choice returns to the source-code delivery method question.
 
 ## Demo Local Credential File
 
-Use this temporary option only for a demo when a secure credential store is unavailable. Ask exactly:
+Use this temporary option only for the HTTPS route in a demo when a secure credential store is unavailable. Ask exactly:
 
 ```text
 데모용 Git 인증 파일의 Local path를 알려주세요. 파일 내용이나 Access Token은 대화에 입력하지 마세요.

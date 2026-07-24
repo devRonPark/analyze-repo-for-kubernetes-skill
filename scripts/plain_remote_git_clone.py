@@ -23,7 +23,7 @@ SCP_SSH_URL = re.compile(r"^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:.+$")
 def validate_remote_url(value: str) -> str:
     parsed = urlsplit(value)
     if parsed.scheme == "https":
-        if not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        if not parsed.hostname or not parsed.path.strip("/") or parsed.username or parsed.password or parsed.query or parsed.fragment:
             raise CloneError("HTTPS Git URL에는 host와 repository path만 포함해야 합니다")
         return "https"
     if parsed.scheme == "ssh":

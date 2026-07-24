@@ -26,6 +26,7 @@ REQUIRED = [
     "scripts/demo_git_readonly_clone.py",
     "scripts/source_intake.py",
     "scripts/plain_remote_git_clone.py",
+    "scripts/remote_git_auth.py",
     "tests/scenarios.md",
 ]
 
