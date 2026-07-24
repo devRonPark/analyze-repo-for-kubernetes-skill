@@ -1,0 +1,9 @@
+{
+  "hookEventName": "PreToolUse",
+  "threadId": "purpose-required",
+  "userPrompt": "/analyze-repo-for-kubernetes /tmp/payments",
+  "toolName": "shell_command",
+  "toolInput": {
+    "command": "rg --files /tmp/payments"
+  }
+}

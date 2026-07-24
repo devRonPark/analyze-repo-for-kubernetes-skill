@@ -19,6 +19,8 @@ At `start`, resolve exactly one Target in this order:
 
 If no Target is actionable, enter `target_required`, ask one AskUserQuestion for the concrete Git URL, Local path or Source archive, and stop the turn. Do not ask a second question or inspect a repository in that turn.
 
+When the Codex `UserPromptSubmit` and `PreToolUse` hooks are installed and trusted, they enforce `target_required` before a local repository discovery tool runs. They permit a standalone installed `SKILL.md` bootstrap read, but reject a command that combines that read with workspace or repository discovery. Codex hosted web tools do not currently invoke `PreToolUse`; their no-discovery rule remains enforced by this skill contract. Without a trusted hook, this state machine remains a best-effort skill contract.
+
 At `target_resolved`, retain the Target kind, location, revision or archive snapshot, subdirectory and read-only access method. A Git URL defaults to its default branch unless a revision is supplied. A Source archive is a ZIP, tar, tar.gz or tgz attachment or local archive path; it is opened read-only and must not execute content or resolve entries outside its extraction root.
 
 ## Purpose Resolution

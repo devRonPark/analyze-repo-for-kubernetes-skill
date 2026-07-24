@@ -44,6 +44,8 @@ Slash Command Input에 Target이 있으면 자연어에 포함된 Target보다 �
 
 대상이 확정되기 전에는 repository를 추측하기 위해 directory listing, file search, shell, Git 또는 web 도구를 사용하지 않는다. 사용자가 skill package 자체의 설치, 검사, 검증 또는 테스트를 요청한 경우에만 skill root를 검사할 수 있다.
 
+Codex에서 hook을 설치하고 신뢰한 경우 `UserPromptSubmit`과 `PreToolUse` hook이 로컬 repository discovery를 강제한다. hook은 skill 또는 AGENTS bootstrap read 자체는 분석 탐색으로 취급하지 않지만, bootstrap read와 workspace/repository discovery를 한 tool call에 결합하면 전체 호출을 거부한다. Codex hosted web 도구는 현재 `PreToolUse` hook 경로를 통과하지 않으므로, web 탐색 금지는 이 Gate의 스킬 지시로도 계속 적용한다. hook이 설치·신뢰되지 않은 환경에서는 이 Gate 전체가 best-effort 지시다.
+
 대상이 주어지면 다음 형식으로 resolved scope를 한 줄로 알리고 접근 가능 여부를 확인한다.
 
 ```text

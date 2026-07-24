@@ -1,0 +1,9 @@
+{
+  "hookEventName": "PreToolUse",
+  "threadId": "missing-skill-read",
+  "userPrompt": "/analyze-repo-for-kubernetes",
+  "toolName": "shell_command",
+  "toolInput": {
+    "command": "sed -n '1,260p' /home/user/.agents/skills/analyze-repo-for-kubernetes/SKILL.md"
+  }
+}

@@ -258,6 +258,33 @@ class SkillPackageTests(unittest.TestCase):
         ]:
             self.assertIn(term, text)
 
+    def test_codex_target_gate_hook_contract(self):
+        hook = (ROOT / "scripts/codex_target_gate_hook.py").read_text(encoding="utf-8")
+        manifest = (ROOT / "hooks.json").read_text(encoding="utf-8")
+        state = (ROOT / "references/source-intake-state.md").read_text(encoding="utf-8")
+        for term in [
+            "PreToolUse",
+            "target_required",
+            "purpose_required",
+            "analysis_ready",
+            "permissionDecision",
+            "Target 확정 전에는 repository discovery tool을 사용할 수 없습니다",
+            "bootstrap read",
+        ]:
+            self.assertIn(term, hook + manifest + state)
+
+    def test_opt_in_codex_cli_validator_contract(self):
+        validator = (ROOT / "scripts/validate_codex_intake.py").read_text(encoding="utf-8")
+        runbook = (ROOT / "references/codex-ui-integration.md").read_text(encoding="utf-8")
+        for term in [
+            "CODEX_INTEGRATION",
+            "--ephemeral",
+            "--sandbox",
+            "projectless ASCII task",
+            "workspace 탐색 command 없음",
+        ]:
+            self.assertIn(term, validator + runbook)
+
     def test_user_facing_invocation_examples_hide_internal_choices(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         prompt = (ROOT / "agents/openai.yaml").read_text(encoding="utf-8")

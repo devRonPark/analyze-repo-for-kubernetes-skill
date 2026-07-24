@@ -167,6 +167,26 @@ bash scripts/install-codex.sh
 ~/.agents/skills/analyze-repo-for-kubernetes
 ```
 
+Codex CLI의 stable hooks 기능이 있으면 설치 스크립트는 `~/.codex/config.toml`에 이 skill만을 위한 `UserPromptSubmit` + `PreToolUse` Target Gate를 등록합니다. 등록 후 설정 검증이 실패하면 기존 설정을 복구하고 설치를 실패로 처리합니다. Codex가 처음 등록한 user hook은 `/hooks`에서 검토·신뢰해야 실행됩니다. 신뢰된 hook은 Target 미확정 상태의 로컬 repository 탐색을 차단하며, 없는 환경에서는 스킬 지시만 적용됩니다. Codex hosted web 도구는 현재 `PreToolUse` 대상이 아니므로 web 탐색 금지는 스킬 지시로 유지됩니다.
+
+테스트 등으로 hook 등록을 명시적으로 건너뛰려면 다음처럼 실행합니다.
+
+```bash
+CODEX_SKIP_HOOK=1 bash scripts/install-codex.sh
+```
+
+제거 시에는 이 skill이 관리한 hook과 intake cache만 제거합니다.
+
+```bash
+bash scripts/uninstall-codex.sh
+```
+
+대화형 Codex UI 검증 절차는 [codex-ui-integration.md](references/codex-ui-integration.md)를 따릅니다. 실제 CLI 검증은 인증된 환경에서만 opt-in으로 실행합니다.
+
+```bash
+CODEX_INTEGRATION=1 python3 scripts/validate_codex_intake.py
+```
+
 ## Private Repository
 
 인증 정보 자체를 Agent 대화에 입력하지 않습니다. 먼저 `gh auth`, Git credential helper, SSH agent 또는 인증된 local checkout으로 접근을 준비한 후 Local path를 분석합니다.

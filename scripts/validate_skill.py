@@ -10,7 +10,9 @@ REQUIRED = [
     "SKILL.md",
     "README.md",
     "agents/openai.yaml",
+    "hooks.json",
     "references/workflow.md",
+    "references/codex-ui-integration.md",
     "references/interview-first-intake.md",
     "references/source-intake-state.md",
     "references/repository-analysis-checklist.md",
@@ -21,6 +23,9 @@ REQUIRED = [
     "assets/migration-assessment-template.md",
     "assets/migration-summary-template.md",
     "scripts/validate_report.py",
+    "scripts/codex_target_gate_hook.py",
+    "scripts/validate_codex_intake.py",
+    "scripts/uninstall-codex.sh",
     "tests/scenarios.md",
 ]
 
@@ -37,6 +42,7 @@ REQUIRED_TERMS = [
     "Default output mode: summary", "Target Resolution Gate",
     "Repository URL", "Local path", "Source archive", "Slash Command Input",
     "ResolvedAnalysisRequest", "analysis_ready", "빠른 구조 파악", "전체 상세 보고서",
+    "PreToolUse", "best-effort", "Target Gate",
 ]
 
 
