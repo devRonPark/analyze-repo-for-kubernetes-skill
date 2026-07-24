@@ -297,6 +297,23 @@ class SkillPackageTests(unittest.TestCase):
             with self.assertRaises(module.IntakeError):
                 module.accept_source_value("local_checkout", str(root / "missing"))
 
+    def test_plain_remote_clone_rejects_embedded_credentials_and_uses_no_credential_option(self):
+        module_path = ROOT / "scripts/plain_remote_git_clone.py"
+        spec = importlib.util.spec_from_file_location("plain_remote_git_clone", module_path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        self.assertEqual(module.validate_remote_url("https://github.com/example/project.git"), "https")
+        self.assertEqual(module.validate_remote_url("git@github.com:example/project.git"), "ssh")
+        with self.assertRaises(module.CloneError):
+            module.validate_remote_url("https://token@github.com/example/project.git")
+        command = module.plain_clone_command("https://github.com/example/project.git", Path("/tmp/disposable-clone"))
+        self.assertEqual(command[:3], ["git", "clone", "--quiet"])
+        self.assertNotIn("credential.helper", " ".join(command))
+        self.assertNotIn("credential-file", " ".join(command))
+
     def test_output_contract(self):
         text = "\n".join(
             path.read_text(encoding="utf-8")

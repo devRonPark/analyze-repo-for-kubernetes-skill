@@ -27,7 +27,9 @@ Do not ask for provider, revision, subdirectory or authentication before the con
 
 Accept HTTPS or SSH URLs for GitHub, GitLab, GitHub Enterprise, GitLab Self-Managed and other internal Git servers. Reject URLs that contain a username, password or token. First attempt read-only access through an existing credential helper, authenticated CLI session or SSH agent.
 
-If anonymous and existing authenticated access both fail, ask exactly:
+For every concrete remote URL, first run [plain_remote_git_clone.py](../scripts/plain_remote_git_clone.py) in a disposable directory. It invokes plain `git clone` with no credential-file argument and no credential helper configuration. It disables terminal prompts, so a public repository proceeds without an authentication question while an unavailable repository returns a safe failure.
+
+If plain clone fails because access is unavailable, ask exactly:
 
 ```text
 원격 Git 저장소에 인증이 필요합니다. 인증값을 대화에 입력하지 말고 접근 방식을 선택해 주세요.

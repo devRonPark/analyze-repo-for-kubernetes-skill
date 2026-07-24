@@ -17,6 +17,16 @@ Expected behavior:
 - does not use directory listing, file search, shell, Git, or web tools to guess the target
 - never requests credential values
 
+## Scenario 0.1 — Public Remote Git
+
+Provide a public GitHub, GitLab or internal Git HTTPS/SSH URL.
+
+Expected behavior:
+
+- clones into a disposable directory with plain non-interactive `git clone`
+- does not ask an authentication question or provide a credential file option after a successful clone
+- does not pass a credential file or credential helper configuration to the clone command
+
 ## Scenario 1 — Default Summary Mode
 
 Analyze a Dockerfile-free monorepo.
