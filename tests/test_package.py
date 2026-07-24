@@ -258,6 +258,30 @@ class SkillPackageTests(unittest.TestCase):
         ]:
             self.assertIn(term, text)
 
+    def test_user_facing_invocation_examples_hide_internal_choices(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        prompt = (ROOT / "agents/openai.yaml").read_text(encoding="utf-8")
+        execution = readme.split("## 실행", 1)[1].split("## 결과 검사", 1)[0]
+
+        for term in [
+            "/analyze-repo-for-kubernetes",
+            "GitHub URL이 포함된 자연어 요청",
+            "https://github.com/example/payments-service.git",
+            "/workspace/payments-service",
+            "/downloads/payments-service.tar.gz",
+            "빠른 구조 파악",
+            "Kubernetes 설계 준비",
+            "이관 문제점 점검",
+            "전체 상세 보고서",
+            "기본 분석으로 진행",
+        ]:
+            self.assertIn(term, execution)
+
+        self.assertNotIn("summary 모드", execution)
+        self.assertNotIn("detailed 모드", execution)
+        self.assertNotIn("summary mode", prompt)
+        self.assertNotIn("detailed mode", prompt)
+
     def test_output_contract(self):
         text = "\n".join(
             path.read_text(encoding="utf-8")

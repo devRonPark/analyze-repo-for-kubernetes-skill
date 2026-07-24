@@ -2,11 +2,11 @@
 
 Qwen Code 또는 Codex가 애플리케이션 Repository를 Kubernetes 이관 관점에서 근거 기반으로 분석하도록 만드는 Agent Skill입니다.
 
-기본 출력은 의사결정 중심의 `summary` 모드입니다. 사용자가 전체 분석을 명시한 경우에만 `detailed` 모드를 사용합니다.
+분석 목적에 따라 출력 깊이를 자동으로 정합니다. 사용자가 전체 상세 보고서를 요청한 경우에만 상세 분석을 사용하고, 그 외에는 의사결정 중심의 기본 분석으로 진행합니다.
 
 ## 핵심 기능
 
-- Repository URL 또는 Local path를 먼저 확인하는 Interview-first 흐름
+- Git URL, Local path 또는 Source archive를 먼저 확인하는 Interview-first 흐름
 - 스킬 설치 경로를 분석 대상으로 오인하지 않게 하는 Target Resolution Gate
 - Dockerfile 없는 Repository와 모노레포 분석
 - 배포 대상 후보, 저장소에 정의된 런타임 의존성, 외부 런타임 의존성, 제외 항목 구분
@@ -74,7 +74,7 @@ bash scripts/update-qwen.sh
 
 ## 실행
 
-대상 없이 호출하면 구체적인 Repository URL 또는 Local path를 한 번에 요청해야 합니다.
+대상 없이 호출하면 AskUserQuestion으로 구체적인 Git URL, Local path 또는 Source archive를 한 번만 요청하고 해당 turn을 종료합니다.
 
 ```text
 /analyze-repo-for-kubernetes
@@ -83,26 +83,49 @@ bash scripts/update-qwen.sh
 정상적인 첫 응답:
 
 ```text
-분석할 Repository URL 또는 Local path를 알려 주세요.
+분석할 Git URL, Local path 또는 Source archive를 알려 주세요.
 ```
 
 질문 후에는 사용자가 대상을 입력할 때까지 파일이나 디렉터리를 탐색하지 않아야 합니다.
 
-현재 Repository를 명시적으로 분석하려면 다음처럼 실행합니다.
+GitHub URL이 포함된 자연어 요청은 URL을 다시 묻지 않고 바로 Target으로 사용합니다.
 
 ```text
-/analyze-repo-for-kubernetes
-Use Local path: .
+https://github.com/example/payments-service 를 Kubernetes 설계 준비에 활용할 수 있게 분석해.
 ```
 
-기본 Summary 요청:
+Slash Command Input으로 Target을 제공할 수도 있습니다. Input Target은 자연어에 다른 Target이 함께 있어도 우선합니다.
 
 ```text
-현재 Repository를 Kubernetes 이관 관점에서 summary 모드로 분석해.
-결과를 kubernetes-migration-summary.md에 저장해.
-Kubernetes manifest와 Dockerfile은 생성하지 마.
-확인할 수 없는 정보는 미확인으로 표시해.
+/analyze-repo-for-kubernetes https://github.com/example/payments-service.git
 ```
+
+```text
+/analyze-repo-for-kubernetes /workspace/payments-service
+```
+
+```text
+/analyze-repo-for-kubernetes /downloads/payments-service.tar.gz
+```
+
+Source archive는 ZIP, tar, tar.gz, tgz를 지원하며 read-only로 분석합니다. 현재 Repository를 명시적으로 분석하려면 Slash Command Input에 `.`을 제공합니다.
+
+```text
+/analyze-repo-for-kubernetes .
+```
+
+Target은 있지만 활용 목적이 모호하면 다음 한 번의 질문으로 맥락을 수집합니다.
+
+```text
+이 분석 결과를 어디에 활용하시나요?
+- 빠른 구조 파악
+- Kubernetes 설계 준비
+- 이관 문제점 점검
+- 전체 상세 보고서
+- 기본 분석으로 진행
+```
+
+Kubernetes 설계 준비, 이관 문제점 점검 또는 전체 상세 보고서처럼 목적이 요청에 명확하면 이 질문 없이 분석을 시작합니다. 사용자는 출력 형식이나 내부 provider·phase를 선택할 필요가 없습니다.
 
 ## 결과 검사
 

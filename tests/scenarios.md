@@ -48,6 +48,16 @@ Expected behavior:
 - the user is not asked to select summary, detailed, provider or phase
 - repository discovery starts only after `phase: analysis_ready`
 
+## Scenario 0D — User-Facing Invocation Examples
+
+Review the README and default prompt examples.
+
+Expected behavior:
+
+- documents a Target-free Slash Command, a natural-language GitHub URL request, and Slash Command Input for Git URL, Local path and Source archive
+- explains that a clear purpose skips the context question and an ambiguous purpose receives it once
+- does not ask the user to choose summary, detailed, provider or phase
+
 ## Scenario 1 — Default Summary Mode
 
 Analyze a Dockerfile-free monorepo.
