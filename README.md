@@ -74,7 +74,7 @@ bash scripts/update-qwen.sh
 
 ## 실행
 
-대상 없이 호출하면 AskUserQuestion으로 구체적인 Git URL, Local path 또는 Source archive를 한 번만 요청하고 해당 turn을 종료합니다.
+대상 없이 호출하면 AskUserQuestion으로 source 제공 방식을 먼저 묻고 해당 turn을 종료합니다. Codex에서는 `request_user_input` 도구를 사용해야 합니다.
 
 ```text
 /analyze-repo-for-kubernetes
@@ -83,10 +83,27 @@ bash scripts/update-qwen.sh
 정상적인 첫 응답:
 
 ```text
-분석할 Git URL, Local path 또는 Source archive를 알려 주세요.
+소스를 어떻게 제공하시겠어요?
+- Repository URL
+- Local directory path
+- Source archive
 ```
 
-질문 후에는 사용자가 대상을 입력할 때까지 파일이나 디렉터리를 탐색하지 않아야 합니다.
+사용자가 source 제공 방식을 고르면 다음 turn에서 선택에 맞는 target 값만 묻습니다.
+
+```text
+분석할 GitHub 또는 Git repository URL을 입력해 주세요.
+```
+
+```text
+분석할 local directory path를 입력해 주세요.
+```
+
+```text
+분석할 ZIP, tar, tar.gz 또는 tgz archive path를 입력해 주세요.
+```
+
+source 제공 방식 질문과 target 값 질문은 같은 turn에 함께 묻지 않습니다. target 값이 확정될 때까지 파일이나 디렉터리를 탐색하지 않아야 합니다.
 
 GitHub URL이 포함된 자연어 요청은 URL을 다시 묻지 않고 바로 Target으로 사용합니다.
 

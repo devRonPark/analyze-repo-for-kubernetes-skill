@@ -14,13 +14,24 @@ Resolve target candidates in this order:
 
 Slash Command Input wins when it and the natural-language request contain different Targets. A natural-language GitHub URL or Git URL is already a concrete target and must not be requested again.
 
-When the target is absent, ask exactly one AskUserQuestion:
+When the target is absent, ask exactly one AskUserQuestion using Codex `request_user_input` when available:
 
 ```text
-분석할 Git URL, Local path 또는 Source archive를 알려 주세요.
+소스를 어떻게 제공하시겠어요?
+- Repository URL
+- Local directory path
+- Source archive
 ```
 
-Stop the turn after asking. Do not use directory listing, file search, shell, Git or web tools to guess the target.
+Stop the turn after asking. Do not ask for the concrete target value in the same turn.
+
+On the next turn, ask exactly one follow-up AskUserQuestion according to the selected source method:
+
+- Repository URL: `분석할 GitHub 또는 Git repository URL을 입력해 주세요.`
+- Local directory path: `분석할 local directory path를 입력해 주세요.`
+- Source archive: `분석할 ZIP, tar, tar.gz 또는 tgz archive path를 입력해 주세요.`
+
+The first source-method question and second target-value question never occur in the same turn. Do not use directory listing, file search, shell, Git or web tools to guess the target while either question is unresolved.
 
 ## Repository URL
 

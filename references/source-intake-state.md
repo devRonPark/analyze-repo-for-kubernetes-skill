@@ -1,10 +1,11 @@
 # Source Intake State
 
-Apply this state machine before repository analysis. It preserves the existing Interview-first AskUserQuestion flow: a missing Target produces one question and ends the turn.
+Apply this state machine before repository analysis. It preserves the Interview-first AskUserQuestion flow: a missing Target first selects the source method, then collects the target value in a later turn.
 
 ```text
-start -> target_required | target_resolved
-target_required -> target_resolved
+start -> source_method_required | target_resolved
+source_method_required -> target_value_required
+target_value_required -> target_resolved
 target_resolved -> purpose_required | analysis_ready
 purpose_required -> analysis_ready
 ```
@@ -17,9 +18,36 @@ At `start`, resolve exactly one Target in this order:
 2. GitHub URL or Git URL supplied in natural language.
 3. Explicit current repository or current workspace.
 
-If no Target is actionable, enter `target_required`, ask one AskUserQuestion for the concrete Git URL, Local path or Source archive, and stop the turn. Do not ask a second question or inspect a repository in that turn.
+If no Target is actionable, enter `source_method_required`. Ask exactly one AskUserQuestion using Codex `request_user_input` when available, then stop the turn without repository discovery:
 
-When the Codex `UserPromptSubmit` and `PreToolUse` hooks are installed and trusted, they enforce `target_required` before a local repository discovery tool runs. They permit a standalone installed `SKILL.md` bootstrap read, but reject a command that combines that read with workspace or repository discovery. Codex hosted web tools do not currently invoke `PreToolUse`; their no-discovery rule remains enforced by this skill contract. Without a trusted hook, this state machine remains a best-effort skill contract.
+```text
+소스를 어떻게 제공하시겠어요?
+- Repository URL
+- Local directory path
+- Source archive
+```
+
+If the user selects `Repository URL`, enter `target_value_required` and ask exactly one follow-up AskUserQuestion:
+
+```text
+분석할 GitHub 또는 Git repository URL을 입력해 주세요.
+```
+
+If the user selects `Local directory path`, enter `target_value_required` and ask exactly one follow-up AskUserQuestion:
+
+```text
+분석할 local directory path를 입력해 주세요.
+```
+
+If the user selects `Source archive`, enter `target_value_required` and ask exactly one follow-up AskUserQuestion:
+
+```text
+분석할 ZIP, tar, tar.gz 또는 tgz archive path를 입력해 주세요.
+```
+
+The first source-method question and second target-value question never occur in the same turn. Do not inspect a repository while either `source_method_required` or `target_value_required` is active.
+
+When the Codex `UserPromptSubmit` and `PreToolUse` hooks are installed and trusted, they enforce `source_method_required` and `target_value_required` before a local repository discovery tool runs. The hook cannot display AskUserQuestion itself; it only blocks premature discovery and returns the question text in the deny reason. They permit a standalone installed `SKILL.md` bootstrap read, but reject a command that combines that read with workspace or repository discovery. Codex hosted web tools do not currently invoke `PreToolUse`; their no-discovery rule remains enforced by this skill contract. Without a trusted hook, this state machine remains a best-effort skill contract.
 
 At `target_resolved`, retain the Target kind, location, revision or archive snapshot, subdirectory and read-only access method. A Git URL defaults to its default branch unless a revision is supplied. A Source archive is a ZIP, tar, tar.gz or tgz attachment or local archive path; it is opened read-only and must not execute content or resolve entries outside its extraction root.
 
@@ -27,7 +55,7 @@ At `target_resolved`, retain the Target kind, location, revision or archive snap
 
 At `target_resolved`, infer the analysis purpose from the request. Treat 빠른 구조 파악, Kubernetes 설계 준비, 이관 문제점 점검 and 전체 상세 보고서 as explicit purposes. An explicit purpose transitions directly to `analysis_ready` without a question.
 
-If the purpose is ambiguous, enter `purpose_required` and ask one AskUserQuestion with these choices: 빠른 구조 파악, Kubernetes 설계 준비, 이관 문제점 점검, 전체 상세 보고서, 기본 분석으로 진행. Do not ask for the Target again. The Target question and purpose question never occur in the same turn.
+If the purpose is ambiguous, enter `purpose_required` and ask one AskUserQuestion with these choices: 빠른 구조 파악, Kubernetes 설계 준비, 이관 문제점 점검, 전체 상세 보고서, 기본 분석으로 진행. Do not ask for the Target again. The source-method, target-value and purpose questions never occur in the same turn.
 
 Create `ResolvedAnalysisRequest` at `analysis_ready`:
 

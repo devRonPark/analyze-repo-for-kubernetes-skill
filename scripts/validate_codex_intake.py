@@ -10,7 +10,9 @@ import sys
 import tempfile
 import re
 
-QUESTION = "분석할 Git URL, Local path 또는 Source archive를 알려 주세요."
+SOURCE_METHOD_QUESTION = "소스를 어떻게 제공하시겠어요?"
+SOURCE_METHOD_TERMS = ("Repository URL", "Local directory path", "Source archive")
+OLD_SINGLE_TARGET_QUESTION = "분석할 Git URL, Local path 또는 Source archive를 알려 주세요."
 DISCOVERY_COMMAND = re.compile(r"(?:^|[\s;&|])(?:rg|grep|find|fd|ls|tree|git)(?:\s|$)")
 
 
@@ -58,18 +60,13 @@ def main() -> int:
         except json.JSONDecodeError:
             continue
 
-    messages = [
-        event.get("item", {}).get("text", "")
-        for event in events
-        if event.get("type") == "item.completed" and event.get("item", {}).get("type") == "agent_message"
-    ]
-    target_questions = [
-        message
-        for message in messages
-        if all(term in message for term in ("Git URL", "Local path", "Source archive"))
-    ]
-    if len(target_questions) != 1:
-        print("실패: Target 없는 호출은 Git URL, Local path, Source archive를 요청하는 질문을 한 번 출력해야 합니다.")
+    if OLD_SINGLE_TARGET_QUESTION in result.stdout:
+        print("실패: Target 없는 호출이 폐기된 단일 target 질문을 사용했습니다.")
+        return 1
+    if SOURCE_METHOD_QUESTION not in result.stdout or any(
+        term not in result.stdout for term in SOURCE_METHOD_TERMS
+    ):
+        print("실패: Target 없는 호출은 source 제공 방식을 묻는 AskUserQuestion을 출력해야 합니다.")
         return 1
 
     completed_commands = [
@@ -92,7 +89,7 @@ def main() -> int:
         print("실패: Target 없는 호출에서 web discovery tool이 완료되었습니다.")
         return 1
 
-    print("성공: Codex CLI Target intake gate가 repository discovery 없이 질문으로 종료되었습니다.")
+    print("성공: Codex CLI Target intake gate가 repository discovery 없이 source 제공 방식 질문으로 종료되었습니다.")
     return 0
 
 

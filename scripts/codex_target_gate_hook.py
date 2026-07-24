@@ -14,11 +14,20 @@ from pathlib import Path
 from typing import Any
 
 SKILL_NAME = "analyze-repo-for-kubernetes"
-TARGET_QUESTION = "분석할 Git URL, Local path 또는 Source archive를 알려 주세요."
+SOURCE_METHOD_QUESTION = "소스를 어떻게 제공하시겠어요?"
+REPOSITORY_URL_QUESTION = "분석할 GitHub 또는 Git repository URL을 입력해 주세요."
+LOCAL_PATH_QUESTION = "분석할 local directory path를 입력해 주세요."
+SOURCE_ARCHIVE_QUESTION = "분석할 ZIP, tar, tar.gz 또는 tgz archive path를 입력해 주세요."
+TARGET_QUESTION = SOURCE_METHOD_QUESTION
 PURPOSE_QUESTION = "이 분석 결과를 어디에 활용하시나요?"
 DISCOVERY_TOKENS = re.compile(
     r"(?:\brg\b|\bgrep\b|\bfind\b|\bfd\b|\bls\b|\btree\b|\bgit\b|\bglob\b|\bweb\b)",
     re.IGNORECASE,
+)
+SOURCE_METHOD_PATTERNS = (
+    ("repository_url", re.compile(r"(?:Repository URL|GitHub URL|Git URL|repository url|remote repository|원격|저장소 URL)", re.IGNORECASE)),
+    ("local_path", re.compile(r"(?:Local directory path|Local path|local directory|local path|로컬|디렉터리|디렉토리)", re.IGNORECASE)),
+    ("source_archive", re.compile(r"(?:Source archive|archive|ZIP|tar\.gz|tgz|압축|아카이브)", re.IGNORECASE)),
 )
 TARGET_PATTERNS = (
     re.compile(r"(?:https?|ssh)://\S+|git@[^\s:]+:[^\s]+", re.IGNORECASE),
@@ -59,37 +68,50 @@ def _event_value(event: dict[str, Any], *keys: str) -> str:
     return _first_text(event, tuple(keys))
 
 
-def _cache_dir() -> Path:
+def _cache_dir_candidates() -> list[Path]:
     configured = os.environ.get("CODEX_TARGET_GATE_CACHE_DIR")
     if configured:
-        return Path(configured)
-    return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / SKILL_NAME
+        return [Path(configured)]
+    default_cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / SKILL_NAME
+    temp_cache = Path(os.environ.get("TMPDIR", "/tmp")) / SKILL_NAME
+    return [default_cache, temp_cache]
 
 
 def _thread_id(event: dict[str, Any]) -> str:
     return _event_value(event, "thread_id", "threadId", "session_id", "sessionId") or "default"
 
 
-def _state_path(event: dict[str, Any]) -> Path:
+def _state_paths(event: dict[str, Any]) -> list[Path]:
     safe_thread = re.sub(r"[^A-Za-z0-9._-]", "_", _thread_id(event))
-    return _cache_dir() / f"{safe_thread}.json"
+    return [cache_dir / f"{safe_thread}.json" for cache_dir in _cache_dir_candidates()]
 
 
 def _load_state(event: dict[str, Any]) -> dict[str, str]:
-    path = _state_path(event)
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {}
-    return payload if isinstance(payload, dict) else {}
+    for path in _state_paths(event):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return {}
 
 
-def _save_state(event: dict[str, Any], phase: str) -> None:
-    path = _state_path(event)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(json.dumps({"phase": phase}, ensure_ascii=False), encoding="utf-8")
-    temporary.replace(path)
+def _save_state(event: dict[str, Any], phase: str, source_method: str = "") -> None:
+    payload = {"phase": phase}
+    if source_method:
+        payload["source_method"] = source_method
+    for path in _state_paths(event):
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_suffix(".tmp")
+            temporary.write_text(
+                json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+            )
+            temporary.replace(path)
+            return
+        except OSError:
+            continue
 
 
 def _has_target(prompt: str) -> bool:
@@ -98,6 +120,23 @@ def _has_target(prompt: str) -> bool:
 
 def _has_purpose(prompt: str) -> bool:
     return bool(PURPOSE_PATTERNS.search(prompt))
+
+
+def _source_method(prompt: str) -> str:
+    for method, pattern in SOURCE_METHOD_PATTERNS:
+        if pattern.search(prompt):
+            return method
+    return ""
+
+
+def _target_value_question(source_method: str) -> str:
+    if source_method == "repository_url":
+        return REPOSITORY_URL_QUESTION
+    if source_method == "local_path":
+        return LOCAL_PATH_QUESTION
+    if source_method == "source_archive":
+        return SOURCE_ARCHIVE_QUESTION
+    return SOURCE_METHOD_QUESTION
 
 
 def _command(event: dict[str, Any]) -> str:
@@ -138,14 +177,7 @@ def _deny(reason: str, event_name: str = "PreToolUse") -> dict[str, Any]:
 
 
 def _allow(event_name: str = "PreToolUse") -> dict[str, Any]:
-    if event_name in {"UserPromptSubmit", "userPromptSubmit"}:
-        return {}
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse" if event_name == "" else event_name,
-            "permissionDecision": "allow",
-        }
-    }
+    return {}
 
 
 def evaluate_event(event: dict[str, Any]) -> dict[str, Any]:
@@ -167,27 +199,43 @@ def evaluate_event(event: dict[str, Any]) -> dict[str, Any]:
     if not relevant:
         return _allow(event_name)
 
+    source_method = state.get("source_method", "")
+    selected_source_method = _source_method(prompt)
     if state.get("phase") == "analysis_ready":
         phase = "analysis_ready"
-    elif state.get("phase") == "purpose_required":
-        phase = "analysis_ready" if _has_purpose(prompt) else "purpose_required"
     elif _has_target(prompt):
         phase = "analysis_ready" if _has_purpose(prompt) else "purpose_required"
+    elif state.get("phase") == "purpose_required":
+        phase = "analysis_ready" if _has_purpose(prompt) else "purpose_required"
+    elif state.get("phase") == "target_value_required":
+        phase = "target_value_required"
+        source_method = source_method or selected_source_method
+    elif selected_source_method:
+        phase = "target_value_required"
+        source_method = selected_source_method
     else:
-        phase = "target_required"
+        phase = "source_method_required"
 
-    _save_state(event, phase)
+    _save_state(event, phase, source_method)
     if event_name in {"UserPromptSubmit", "userPromptSubmit"}:
         return _allow(event_name)
     if phase == "analysis_ready":
         return _allow(event_name)
 
-    if phase == "target_required":
+    if phase == "source_method_required":
         if _is_skill_read_only(command):
             return _allow(event_name)
         if command or tool_name:
             return _deny(
-                f"{TARGET_QUESTION} Target 확정 전에는 repository discovery tool을 사용할 수 없습니다.",
+                f"{SOURCE_METHOD_QUESTION} Source 제공 방식 확정 전에는 repository discovery tool을 사용할 수 없습니다.",
+                event_name,
+            )
+        return _allow(event_name)
+
+    if phase == "target_value_required":
+        if command or tool_name:
+            return _deny(
+                f"{_target_value_question(source_method)} Target 값 확정 전에는 repository discovery tool을 사용할 수 없습니다.",
                 event_name,
             )
         return _allow(event_name)
