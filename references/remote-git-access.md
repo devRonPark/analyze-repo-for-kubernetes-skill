@@ -70,4 +70,10 @@ Do not use this file for SSH URLs, multiple repositories, write operations, or p
 
 ## Source Archive
 
-Accept only `.zip`, `.tar.gz` and `.tgz` files. Extract them into a disposable analysis directory, reject path traversal and symlinks outside that directory, and never execute archive contents. Detect a single repository root automatically; ask for an archive subdirectory only when multiple roots are plausible.
+Accept only `.zip`, `.tar.gz` and `.tgz` files. Use [source_archive.py](../scripts/source_archive.py) to require a readable non-symlink archive file and a destination that does not exist yet. It rejects absolute or traversal member paths, symlinks, hard links, special files, duplicate member paths, more than 10,000 members, and more than 1 GiB declared uncompressed content. It extracts members manually into the disposable directory and never executes archive contents.
+
+```text
+python3 scripts/source_archive.py --archive <archive file path> --destination <new disposable directory>
+```
+
+If all content is under one top-level directory, use that directory as the analysis root. If the archive has files at its root, use the extraction root. If it has multiple top-level directories and no root files, ask for one archive subdirectory; do not guess. Record the archive SHA-256 as the source revision.

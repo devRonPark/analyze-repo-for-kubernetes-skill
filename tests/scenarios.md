@@ -37,6 +37,18 @@ Expected behavior:
 - for SSH, offers only an existing SSH agent/key or another source delivery method
 - never requests a token, password, private-key path, key passphrase, or credential-file content; never offers a credential file for SSH
 
+## Scenario 0.3 — Source Archive
+
+Provide a local `.zip`, `.tar.gz`, or `.tgz` source archive path.
+
+Expected behavior:
+
+- requires a readable regular archive file and a new disposable extraction directory
+- extracts only regular files and directories, without executing archive contents
+- rejects absolute paths, path traversal, symlinks, hard links, special files, duplicate paths, and archive safety-limit violations
+- resolves a single top-level directory or an extraction root with root files; asks for a subdirectory when multiple top-level directories are plausible
+- records the archive SHA-256 as the resolved source revision
+
 ## Scenario 1 — Default Summary Mode
 
 Analyze a Dockerfile-free monorepo.

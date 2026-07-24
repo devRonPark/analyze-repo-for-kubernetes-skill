@@ -1,9 +1,11 @@
 from pathlib import Path
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 import importlib.util
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -351,6 +353,49 @@ class SkillPackageTests(unittest.TestCase):
                 "next_action": "plain_remote_git_clone",
             },
         )
+
+    def test_source_archive_extracts_safe_content_and_rejects_unsafe_members(self):
+        module_path = ROOT / "scripts/source_archive.py"
+        spec = importlib.util.spec_from_file_location("source_archive", module_path)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive = root / "source.zip"
+            with zipfile.ZipFile(archive, "w") as zipped:
+                zipped.writestr("service/app.py", "print('safe')\n")
+            resolved = module.extract_source_archive(archive, root / "extracted")
+            self.assertEqual(resolved["state"], "resolved")
+            self.assertEqual(resolved["subdirectory"], "service")
+            self.assertTrue((Path(resolved["resolved_target"]) / "app.py").is_file())
+            self.assertTrue(resolved["revision"].startswith("archive-sha256:"))
+
+            multiple = root / "multiple.zip"
+            with zipfile.ZipFile(multiple, "w") as zipped:
+                zipped.writestr("api/app.py", "")
+                zipped.writestr("web/app.py", "")
+            ambiguous = module.extract_source_archive(multiple, root / "multiple-extracted")
+            self.assertEqual(ambiguous["state"], "awaiting_subdirectory")
+            self.assertEqual(ambiguous["candidate_subdirectories"], ["api", "web"])
+
+            traversal = root / "traversal.zip"
+            with zipfile.ZipFile(traversal, "w") as zipped:
+                zipped.writestr("../outside.txt", "unsafe")
+            with self.assertRaises(module.ArchiveError):
+                module.extract_source_archive(traversal, root / "traversal-extracted")
+
+            link = root / "link.tar.gz"
+            with tarfile.open(link, "w:gz") as tarred:
+                member = tarfile.TarInfo("service/link")
+                member.type = tarfile.SYMTYPE
+                member.linkname = "../../outside"
+                tarred.addfile(member)
+            with self.assertRaises(module.ArchiveError):
+                module.extract_source_archive(link, root / "link-extracted")
 
     def test_output_contract(self):
         text = "\n".join(
