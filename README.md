@@ -172,6 +172,16 @@ python3 -m unittest discover -s tests -p 'test_*.py' -v
 python3 scripts/validate_regression.py tests/fixtures/regression/expected.json
 ```
 
+`expected.json`는 기존 반복 출력 fixture schema를 검증합니다. 실제 repository-run 회귀 비교는 생성된 report를 먼저 검증한 뒤 normalized snapshot과 비교합니다.
+
+```bash
+python3 scripts/validate_regression.py tests/fixtures/regression/black_box_expected.json --actual-report tests/fixtures/regression/black_box_report.md --repo-root tests/fixtures/black_box_repo
+```
+
+```bash
+python3 scripts/run_black_box_eval.py --repo tests/fixtures/black_box_repo --report tests/fixtures/regression/black_box_report.md --expected tests/fixtures/regression/black_box_expected.json --output black-box-result.json
+```
+
 ## Codex 설치
 
 macOS, Linux, WSL 또는 Git Bash:

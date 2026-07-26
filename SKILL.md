@@ -1,6 +1,6 @@
 ---
 name: analyze-repo-for-kubernetes
-description: Use when performing evidence-based analysis of an application repository for Kubernetes migration readiness, Docker Compose migration assessment, GitOps onboarding, or later manifest and Helm design, including monorepos and repositories without Dockerfiles. Produce analysis and minimum design inputs only; do not generate deployment artifacts.
+description: Use when performing evidence-based analysis of application repositories for Kubernetes migration readiness, Docker Compose migration assessment, GitOps onboarding, or design inputs, including monorepos and repositories without Dockerfiles. Produce analysis and minimum design inputs only; do not use for manifest/Helm generation or editing, live-cluster troubleshooting, existing-manifest-only review, general Kubernetes explanations, or app/containerization changes.
 ---
 
 # Analyze Repository for Kubernetes

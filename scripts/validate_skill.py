@@ -27,6 +27,8 @@ REQUIRED = [
     "assets/migration-summary-template.md",
     "assets/demo-git-credential.example.json",
     "scripts/validate_report.py",
+    "scripts/normalize_report.py",
+    "scripts/run_black_box_eval.py",
     "scripts/codex_target_gate_hook.py",
     "scripts/validate_codex_intake.py",
     "scripts/uninstall-codex.sh",
