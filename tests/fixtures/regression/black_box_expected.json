@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "case": {
+    "id": "node-api-compose-postgres",
+    "fixture_repository": "tests/fixtures/black_box_repo",
+    "prompt": "Use Local path: tests/fixtures/black_box_repo and produce Kubernetes design inputs.",
+    "report_mode": "summary",
+    "reconciles_closed_dependencies": ["#22", "#23"],
+    "reconciliation": "Closed/not-planned dependencies are covered by validate_report.py schema/citation checks and this normalized report model."
+  },
+  "comparison_fields": [
+    "workload_candidates",
+    "workload_kinds",
+    "repository_defined_runtime_dependencies",
+    "external_runtime_dependencies",
+    "excluded_candidates",
+    "repository_launch_definitions",
+    "target_environment_baseline",
+    "design_input_verdict"
+  ],
+  "expected": {
+    "workload_candidates": ["api"],
+    "workload_kinds": {"api": "HTTP 서버"},
+    "repository_defined_runtime_dependencies": ["postgres"],
+    "external_runtime_dependencies": [],
+    "excluded_candidates": ["shared-utils"],
+    "repository_launch_definitions": ["docker-compose service api", "package script start"],
+    "target_environment_baseline": "미확인",
+    "design_input_verdict": "추가 정보 필요"
+  }
+}
