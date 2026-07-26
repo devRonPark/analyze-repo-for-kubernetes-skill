@@ -6,12 +6,13 @@ from dataclasses import asdict, dataclass
 from dataclasses import field
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 import subprocess
 import sys
 from typing import Any, Callable
+
+from repository_inventory import build_inventory, format_diagnostics, included_file_records
 
 
 EVIDENCE_SCHEMA_VERSION = "repository-evidence/v1"
@@ -308,30 +309,18 @@ def redact_sensitive_text(text: str) -> str:
 
 
 def walk_text_files(repository_root: Path, analysis_root: Path) -> list[FileRecord]:
+    relative = analysis_root.relative_to(repository_root).as_posix() or "."
+    inventory = build_inventory(repository_root, analysis_root, relative)
     records: list[FileRecord] = []
-    for directory, dirnames, filenames in os.walk(analysis_root, topdown=True, followlinks=False):
-        dirnames[:] = sorted(
-            name
-            for name in dirnames
-            if not is_generated_path((Path(directory) / name).relative_to(repository_root).as_posix())
-        )
-        for filename in sorted(filenames):
-            candidate = Path(directory) / filename
-            if candidate.is_symlink() or not candidate.is_file():
-                continue
-            relative_path = candidate.relative_to(repository_root).as_posix()
-            if is_generated_path(relative_path) or is_binary_file(candidate):
-                continue
-            try:
-                stat = candidate.stat()
-                line_count = len(read_lines(candidate))
-            except OSError:
-                continue
+    for entry in included_file_records(inventory):
+        size_bytes = entry.get("size_bytes")
+        line_count = entry.get("line_count")
+        if isinstance(size_bytes, int) and isinstance(line_count, int):
             records.append(
                 FileRecord(
-                    path=relative_path,
-                    size_bytes=stat.st_size,
-                    extension=candidate.suffix.lower(),
+                    path=str(entry["path"]),
+                    size_bytes=size_bytes,
+                    extension=str(entry.get("extension", "")),
                     line_count=line_count,
                 )
             )
@@ -877,13 +866,32 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("target", type=Path, help="Local repository path to scan read-only")
     parser.add_argument("--subdirectory", default=".", help="Repository-relative analysis path")
     parser.add_argument("--output", type=Path, help="Write JSON to this path instead of stdout")
+    parser.add_argument("--inventory-output", type=Path, help="Write repository inventory JSON to this path")
+    parser.add_argument("--diagnostics", action="store_true", help="Print compact repository inventory diagnostics to stderr")
     args = parser.parse_args(argv)
 
     try:
         payload = scan_repository(args.target, args.subdirectory)
+        inventory_payload = None
+        if args.inventory_output or args.diagnostics:
+            repository_root, analysis_root, normalized_subdirectory = resolve_roots(args.target, args.subdirectory)
+            inventory_payload = build_inventory(
+                repository_root,
+                analysis_root,
+                normalized_subdirectory,
+                revision=payload["snapshot"]["revision"],
+            )
     except ValueError as error:
         print(str(error), file=sys.stderr)
         return 2
+
+    if args.inventory_output and inventory_payload is not None:
+        args.inventory_output.write_text(
+            json.dumps(inventory_payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    if args.diagnostics and inventory_payload is not None:
+        print(format_diagnostics(inventory_payload["summary"]), file=sys.stderr)
 
     rendered = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
     if args.output:
