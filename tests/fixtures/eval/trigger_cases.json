@@ -1,0 +1,116 @@
+[
+  {
+    "id": "positive-migration-readiness",
+    "prompt": "Analyze https://github.com/example/payments-api for Kubernetes migration readiness.",
+    "should_trigger": true,
+    "rationale": "Repository-to-Kubernetes readiness analysis is in scope.",
+    "runtime_events": [
+      {
+        "event": "skill_invocation",
+        "skill": "analyze-repo-for-kubernetes"
+      }
+    ]
+  },
+  {
+    "id": "positive-dockerfile-free-monorepo",
+    "prompt": "Review this Dockerfile-free monorepo and give Kubernetes design inputs for each service.",
+    "should_trigger": true,
+    "rationale": "Kubernetes design-input analysis for a repository is in scope.",
+    "runtime_events": [
+      {
+        "event": "skill_invocation",
+        "skill": "analyze-repo-for-kubernetes"
+      }
+    ]
+  },
+  {
+    "id": "positive-compose-migration",
+    "prompt": "Assess our Docker Compose app repository and identify what is needed before moving it to Kubernetes.",
+    "should_trigger": true,
+    "rationale": "Docker Compose migration assessment based on source evidence is in scope.",
+    "runtime_events": [
+      {
+        "event": "skill_invocation",
+        "skill": "analyze-repo-for-kubernetes"
+      }
+    ]
+  },
+  {
+    "id": "positive-gitops-onboarding",
+    "prompt": "Check whether this application repository is ready to onboard to GitOps-based Kubernetes delivery.",
+    "should_trigger": true,
+    "rationale": "GitOps onboarding readiness analysis for an application repository is in scope.",
+    "runtime_events": [
+      {
+        "event": "skill_invocation",
+        "skill": "analyze-repo-for-kubernetes"
+      }
+    ]
+  },
+  {
+    "id": "positive-local-checkout-design",
+    "prompt": "Use Local path: /tmp/orders and prepare evidence-backed Kubernetes design inputs.",
+    "should_trigger": true,
+    "rationale": "A local checkout plus Kubernetes design-input request is in scope.",
+    "runtime_events": [
+      {
+        "event": "skill_invocation",
+        "skill": "analyze-repo-for-kubernetes"
+      }
+    ]
+  },
+  {
+    "id": "positive-source-archive-risk",
+    "prompt": "Analyze /tmp/app.tgz for Kubernetes migration risks and missing deployment inputs.",
+    "should_trigger": true,
+    "rationale": "A source archive plus migration-risk analysis is in scope.",
+    "runtime_events": [
+      {
+        "event": "skill_invocation",
+        "skill": "analyze-repo-for-kubernetes"
+      }
+    ]
+  },
+  {
+    "id": "negative-generate-yaml",
+    "prompt": "Generate Deployment and Service YAML for my Node app.",
+    "should_trigger": false,
+    "rationale": "Kubernetes artifact generation is out of scope.",
+    "runtime_events": []
+  },
+  {
+    "id": "negative-edit-helm-values",
+    "prompt": "Update this Helm chart and values.yaml to add resource limits.",
+    "should_trigger": false,
+    "rationale": "Editing Helm artifacts is out of scope.",
+    "runtime_events": []
+  },
+  {
+    "id": "negative-live-pod-troubleshooting",
+    "prompt": "Troubleshoot why the running payment Pod is CrashLoopBackOff in my cluster.",
+    "should_trigger": false,
+    "rationale": "Live cluster troubleshooting is out of scope.",
+    "runtime_events": []
+  },
+  {
+    "id": "negative-general-kubernetes-concept",
+    "prompt": "Explain what a Kubernetes Service does.",
+    "should_trigger": false,
+    "rationale": "General Kubernetes education is out of scope.",
+    "runtime_events": []
+  },
+  {
+    "id": "negative-existing-manifest-review",
+    "prompt": "Review only this existing deployment.yaml for best-practice issues.",
+    "should_trigger": false,
+    "rationale": "Existing-manifest-only review is out of scope.",
+    "runtime_events": []
+  },
+  {
+    "id": "negative-implementation-change",
+    "prompt": "Modify the app to expose /health and add a Dockerfile.",
+    "should_trigger": false,
+    "rationale": "Application and containerization implementation changes are out of scope.",
+    "runtime_events": []
+  }
+]
