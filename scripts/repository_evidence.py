@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict, dataclass
+from dataclasses import field
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -12,6 +14,51 @@ import sys
 from typing import Any, Callable
 
 
+EVIDENCE_SCHEMA_VERSION = "repository-evidence/v1"
+EXTRACTOR_NAME = "repository_evidence"
+EXTRACTOR_VERSION = "1.0.0"
+ALLOWED_EVIDENCE_KINDS = {
+    "absence",
+    "compose_env_key",
+    "compose_service",
+    "compose_service_field",
+    "config_key",
+    "container_definition",
+    "dependency_hint",
+    "docker_env_key",
+    "docker_instruction",
+    "dotnet_project_hint",
+    "environment_access",
+    "go_module_hint",
+    "helm_chart",
+    "helm_template_resource",
+    "helm_values_key",
+    "java_build_hint",
+    "java_wrapper",
+    "kubernetes_container_field",
+    "kubernetes_env_key",
+    "kubernetes_metadata",
+    "kubernetes_probe",
+    "kubernetes_resource",
+    "kubernetes_service_exposure",
+    "kubernetes_volume",
+    "kustomize_composition",
+    "language_manifest",
+    "language_runtime_entrypoint_hint",
+    "manifest",
+    "node_script",
+    "node_script_or_entrypoint",
+    "node_workspace",
+    "package_manager_conflict",
+    "package_manager_hint",
+    "php_artisan_hint",
+    "platform_config_hint",
+    "platform_hint",
+    "platform_process",
+    "python_dependency_or_lock",
+    "runtime_entrypoint_hint",
+    "rust_cargo_hint",
+}
 EXCLUDED_PATH_PARTS = {
     ".git",
     ".hg",
@@ -177,6 +224,11 @@ class EvidenceRecord:
     status: str
     evidence: str
     data: dict[str, Any]
+    source: dict[str, int | str] | None = None
+    absence: dict[str, str] | None = None
+    extractor: dict[str, str] = field(
+        default_factory=lambda: {"name": EXTRACTOR_NAME, "version": EXTRACTOR_VERSION}
+    )
 
 
 def resolve_roots(target: Path, subdirectory: str) -> tuple[Path, Path, str]:
@@ -309,6 +361,95 @@ def is_config_candidate(path: str) -> bool:
 
 def positive_evidence(path: str, line_number: int) -> str:
     return f"{path}:{line_number}"
+
+
+def parse_positive_evidence(evidence: str) -> dict[str, int | str] | None:
+    match = re.match(r"^(.+):([1-9][0-9]*)(?:-([1-9][0-9]*))?$", evidence)
+    if not match:
+        return None
+    start_line = int(match.group(2))
+    end_line = int(match.group(3) or start_line)
+    return {"path": match.group(1), "start_line": start_line, "end_line": end_line}
+
+
+def canonical_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def stable_evidence_id(
+    kind: str,
+    status: str,
+    data: dict[str, Any],
+    source: dict[str, int | str] | None = None,
+    absence: dict[str, str] | None = None,
+) -> str:
+    # Status is mutable confidence metadata; it is not part of evidence identity.
+    identity = {
+        "absence": absence,
+        "data": data,
+        "kind": kind,
+        "source": source,
+    }
+    digest = hashlib.sha256(canonical_json(identity).encode("utf-8")).hexdigest()[:20]
+    return f"ev_{digest}"
+
+
+def build_evidence_record(
+    kind: str,
+    evidence: str,
+    data: dict[str, Any],
+    status: str = "confirmed",
+    source: dict[str, int | str] | None = None,
+    absence: dict[str, str] | None = None,
+) -> EvidenceRecord:
+    if kind == "absence" and absence is None:
+        absence = {
+            "scope": str(data.get("scope", "")),
+            "pattern": str(data.get("pattern", "")),
+            "result": str(data.get("result", "")),
+        }
+    if kind != "absence" and source is None:
+        source = parse_positive_evidence(evidence)
+    return EvidenceRecord(
+        id=stable_evidence_id(kind, status, data, source=source, absence=absence),
+        kind=kind,
+        status=status,
+        evidence=evidence,
+        data=data,
+        source=source,
+        absence=absence,
+    )
+
+
+def evidence_record_to_dict(record: EvidenceRecord) -> dict[str, Any]:
+    rendered = asdict(record)
+    if rendered.get("source") is None:
+        rendered.pop("source", None)
+    if rendered.get("absence") is None:
+        rendered.pop("absence", None)
+    return rendered
+
+
+def evidence_sort_key(record: EvidenceRecord) -> tuple[Any, ...]:
+    source = record.source or {}
+    absence = record.absence or {}
+    return (
+        record.kind,
+        source.get("path", ""),
+        source.get("start_line", 0),
+        source.get("end_line", 0),
+        absence.get("scope", ""),
+        absence.get("pattern", ""),
+        canonical_json(record.data),
+        record.id,
+    )
+
+
+def dedupe_and_sort_evidence(records: list[EvidenceRecord]) -> list[EvidenceRecord]:
+    by_id: dict[str, EvidenceRecord] = {}
+    for record in records:
+        by_id.setdefault(record.id, record)
+    return sorted(by_id.values(), key=evidence_sort_key)
 
 
 def leading_spaces(line: str) -> int:
@@ -634,12 +775,11 @@ def collect_package_manager_conflicts(records: list[EvidenceRecord]) -> list[Evi
         if len(managers) < 2:
             continue
         conflicts.append(
-            EvidenceRecord(
-                id=f"ev-{len(records) + len(conflicts) + 1:04d}",
-                kind="package_manager_conflict",
-                status="confirmed",
-                evidence=manager_records[0].evidence,
-                data={"scope": scope, "managers": managers},
+            build_evidence_record(
+                "package_manager_conflict",
+                manager_records[0].evidence,
+                {"scope": scope, "managers": managers},
+                source=manager_records[0].source,
             )
         )
     return conflicts
@@ -651,15 +791,7 @@ def collect_universal_evidence(snapshot: RepositorySnapshot) -> list[EvidenceRec
     seen_container_definition = False
 
     def add(kind: str, evidence: str, data: dict[str, Any]) -> None:
-        records.append(
-            EvidenceRecord(
-                id=f"ev-{len(records) + 1:04d}",
-                kind=kind,
-                status="confirmed",
-                evidence=evidence,
-                data=data,
-            )
-        )
+        records.append(build_evidence_record(kind, evidence, data))
 
     for file_record in snapshot.files:
         path = file_record.path
@@ -722,19 +854,19 @@ def collect_universal_evidence(snapshot: RepositorySnapshot) -> list[EvidenceRec
             f"검색(scope={scope}, pattern=Dockerfile|Containerfile, result=없음)",
             {"scope": scope, "pattern": "Dockerfile|Containerfile", "result": "없음"},
         )
-    return records
+    return dedupe_and_sort_evidence(records)
 
 
 def scan_repository(target: Path, subdirectory: str = ".") -> dict[str, Any]:
     snapshot = snapshot_repository(target, subdirectory)
     evidence = collect_universal_evidence(snapshot)
     return {
-        "schema_version": 1,
+        "schema_version": EVIDENCE_SCHEMA_VERSION,
         "snapshot": {
             **asdict(snapshot),
             "files": [asdict(record) for record in snapshot.files],
         },
-        "evidence": [asdict(record) for record in evidence],
+        "evidence": [evidence_record_to_dict(record) for record in evidence],
     }
 
 
