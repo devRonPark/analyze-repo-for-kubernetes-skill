@@ -35,6 +35,8 @@ def normalize_markdown(text: str) -> dict[str, Any]:
         "external_runtime_dependencies": _named_heading_values(text, "외부 런타임 의존성"),
         "excluded_candidates": _excluded_candidates(text),
         "repository_launch_definitions": _comma_values(_line_value(text, "저장소에서 확인한 기동 정의")),
+        "production_startup_commands": _component_line_values(text, "운영 기동 명령"),
+        "listener_ports": _component_comma_values(text, "수신 포트"),
         "target_environment_baseline": _line_value(text, "운영 환경 배포 기준 구성") or "미확인",
         "design_input_verdict": _line_value(text, "판정"),
     }
@@ -54,17 +56,45 @@ def _workload_candidates(text: str) -> tuple[list[str], dict[str, str]]:
 
 def _component_workload_kinds(text: str) -> dict[str, str]:
     kinds: dict[str, str] = {}
+    for name, card in _component_sections(text):
+        kind = _line_value(card, "실행 형태")
+        if kind:
+            kinds[name] = kind
+    return kinds
+
+
+def _component_line_values(text: str, key: str) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for name, card in _component_sections(text):
+        value = _line_value(card, key)
+        if value and value not in {"미확인", "해당 없음", "없음"}:
+            values[name] = value
+    return values
+
+
+def _component_comma_values(text: str, key: str) -> dict[str, list[str]]:
+    values: dict[str, list[str]] = {}
+    for name, card in _component_sections(text):
+        parts = [
+            value
+            for value in _comma_values(_line_value(card, key))
+            if value not in {"미확인", "해당 없음", "없음"}
+        ]
+        if parts:
+            values[name] = parts
+    return values
+
+
+def _component_sections(text: str) -> list[tuple[str, str]]:
     headings = list(re.finditer(r"(?m)^### 배포 대상:\s*(\S+)", text))
+    sections: list[tuple[str, str]] = []
     for index, heading in enumerate(headings):
         end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
         next_section = text.find("\n## ", heading.end())
         if next_section != -1 and next_section < end:
             end = next_section
-        card = text[heading.end():end]
-        kind = _line_value(card, "실행 형태")
-        if kind:
-            kinds[heading.group(1)] = kind
-    return kinds
+        sections.append((heading.group(1), text[heading.end():end]))
+    return sections
 
 
 def _named_heading_values(text: str, label: str) -> list[str]:
