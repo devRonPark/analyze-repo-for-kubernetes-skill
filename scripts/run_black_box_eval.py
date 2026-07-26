@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import shlex
 import subprocess
@@ -27,6 +28,11 @@ def main() -> int:
     parser.add_argument("--model", default="unavailable", help="Model identifier recorded as metadata")
     parser.add_argument("--runtime", default="", help="Runtime identifier recorded as metadata")
     parser.add_argument("--mode", choices=["summary", "detailed"], default="summary")
+    parser.add_argument("--skill-mode", choices=["skill-on", "skill-off", "unspecified"], default="unspecified")
+    parser.add_argument("--prompt", default="", help="Prompt shared by comparable eval runs")
+    parser.add_argument("--repository-revision", default="unavailable", help="Repository revision shared by comparable eval runs")
+    parser.add_argument("--runtime-options", default="{}", help="JSON runtime options shared by comparable eval runs")
+    parser.add_argument("--tool-permissions", default="unavailable", help="Tool permission profile shared by comparable eval runs")
     parser.add_argument("--live-command", help="Opt-in command that emits a Markdown report on stdout")
     parser.add_argument("--allow-live-runtime", action="store_true", help="Allow live runtime execution")
     args = parser.parse_args()
@@ -59,6 +65,11 @@ def main() -> int:
         "metadata": {
             "model": args.model,
             "runtime": args.runtime or runtime,
+            "skill_mode": args.skill_mode,
+            "prompt": args.prompt,
+            "repository_revision": args.repository_revision,
+            "runtime_options": _parse_runtime_options(args.runtime_options),
+            "tool_permissions": args.tool_permissions,
             "skill_commit": _skill_commit(),
             "fixture_repository": str(args.repo),
         },
@@ -93,9 +104,16 @@ def _obtain_report(args: argparse.Namespace) -> tuple[str, str]:
         return args.report.read_text(encoding="utf-8"), "fixture-report"
 
     command = shlex.split(args.live_command)
+    env = os.environ.copy()
+    env["ANALYZE_REPO_FOR_KUBERNETES_SKILL_MODE"] = args.skill_mode
+    env["ANALYZE_REPO_FOR_KUBERNETES_PROMPT"] = args.prompt
+    env["ANALYZE_REPO_FOR_KUBERNETES_REPOSITORY_REVISION"] = args.repository_revision
+    env["ANALYZE_REPO_FOR_KUBERNETES_RUNTIME_OPTIONS"] = args.runtime_options
+    env["ANALYZE_REPO_FOR_KUBERNETES_TOOL_PERMISSIONS"] = args.tool_permissions
     completed = subprocess.run(
         command,
         cwd=args.repo,
+        env=env,
         capture_output=True,
         text=True,
         check=False,
@@ -105,6 +123,13 @@ def _obtain_report(args: argparse.Namespace) -> tuple[str, str]:
         print(completed.stderr, end="", file=sys.stderr)
         raise SystemExit(completed.returncode)
     return completed.stdout, "live-command"
+
+
+def _parse_runtime_options(value: str) -> Any:
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return value
 
 
 def _skill_commit() -> str:
