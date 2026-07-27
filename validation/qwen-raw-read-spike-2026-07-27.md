@@ -28,6 +28,45 @@
 
 프롬프트의 나머지 부분은 두 arm이 글자 단위로 동일한 preamble을 공유한다. 차이는 입력 방식 문장뿐이다.
 
+## 측정 시점 주의
+
+본 측정은 `a2db5eb` 시점의 작업 트리에서 실행했다. 실행 당시 로컬 `main`이 `origin/main`보다 55 커밋 뒤처져 있었고, 이 사실은 측정 종료 후에 발견했다.
+
+`scripts/validate_report.py`와 `assets/` 템플릿은 두 시점이 **완전히 동일**하므로 계약 관련 결과는 그대로 유효하다.
+
+그러나 `scripts/repository_evidence.py`는 그 사이 `+724`줄 변경됐다. 따라서 **Arm B의 입력은 구버전 evidence다.** 영향은 아래 절에 별도로 기록한다.
+
+## 현행 scanner에서 Arm B 방식은 실행 불가능하다
+
+측정 후 동일한 clone에 현행 `repository_evidence.py`를 다시 돌려 비교했다.
+
+| 항목 | 측정 당시 (구버전) | 현행 |
+| --- | ---: | ---: |
+| evidence 건수 | `875` | `848` |
+| evidence JSON 크기 | `253,620` bytes | `489,712` bytes |
+| 정확한 token 수 | `72,004` | `151,760` |
+
+건수는 줄었으나 레코드가 상세해져 크기가 약 2배가 됐다. 최상위 키에 `diagnostics`가 추가됐다.
+
+현행 evidence를 그대로 모델에 넣으면 다음과 같이 거부된다.
+
+```text
+HTTP 400
+The input (151760 tokens) is longer than the model's context length (131072 tokens).
+```
+
+Qwen이 주입하는 약 `30K`의 고정 비용을 더하기 전에 이미 한도를 `20,688` token 초과한다.
+
+즉 **Arm B가 사용한 "evidence 전량 주입" 방식은 현행 저장소 상태에서 실행 자체가 불가능하다.** 대상인 spring-petclinic이 119개 파일의 작은 저장소라는 점을 감안하면, 이 방식은 확장되지 않는다.
+
+이 사실은 본 보고서의 결론 방향을 바꾸지 않고 강화한다.
+
+- Arm A(raw-read)는 `1,822,966` token을 썼다. 비싸다.
+- Arm B(evidence 전량 주입)는 현행 기준으로 실행 불가능하다.
+- 따라서 **두 방식 모두 그대로는 채택할 수 없다.**
+
+남는 방향은 LLM에 evidence 전량을 주지 않는 것이다. 다음 단계 2항의 renderer 설계가 여기에 해당하며, 여기에 **evidence 선별 단계**가 추가로 필요하다.
+
 ## Workspace 준비
 
 | 항목 | 값 |
@@ -271,6 +310,8 @@ Arm A는 119개 중 13개 파일만 읽고도 input token을 Arm B의 10.8배 �
 6. **tool 정의 56개를 줄인다.** `computer_use__*` 계열을 포함한 도구가 매 요청에 실린다. 이 skill 실행에 필요한 도구만 노출하면 고정 비용이 줄어든다.
 
 7. **재측정 시 Arm B에 skill 자산 읽기를 허용한다.** 이번 측정은 파일 도구를 전면 금지해 템플릿 접근까지 막았다. 금지 대상은 분석 대상 저장소여야 하고 skill 자산은 아니다.
+
+8. **evidence 선별 단계를 만든다.** 현행 evidence는 `151,760` token으로 이 모델의 context에 들어가지 않는다. 어떤 evidence를 LLM에 넘길지 고르는 단계가 필요하며, 선별 자체는 결정론적이어야 한다. 2항 renderer와 함께 설계한다.
 
 ## 재현 정보
 
