@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "repository-navigation-observation/v1",
+  "title": "Repository Navigation Observation",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "corpus_id",
+    "repository",
+    "revision",
+    "language",
+    "repository_shape",
+    "workload_candidates",
+    "navigation_steps",
+    "file_decisions",
+    "relationship_edges",
+    "design_findings",
+    "scanner_misses",
+    "rule_candidates",
+    "stop_decision",
+    "review"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "corpus_id": {"type": "string", "minLength": 1},
+    "repository": {"type": "string", "pattern": "^[^/]+/[^/]+$"},
+    "revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "language": {"enum": ["node", "java", "python", "go"]},
+    "repository_shape": {"type": "string", "minLength": 1},
+    "analysis_scope": {"type": "string", "default": "."},
+    "workload_candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "root", "role", "status", "evidence"],
+        "properties": {
+          "id": {"type": "string"},
+          "root": {"type": "string"},
+          "role": {"type": "string"},
+          "status": {"enum": ["confirmed", "inferred", "unknown", "conflicting"]},
+          "evidence": {"type": "array", "items": {"$ref": "#/$defs/source"}}
+        }
+      }
+    },
+    "navigation_steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["order", "action", "target", "reason", "result"],
+        "properties": {
+          "order": {"type": "integer", "minimum": 1},
+          "action": {"enum": ["seed", "read", "follow", "search", "reject", "stop"]},
+          "target": {"type": "string"},
+          "reason": {"type": "string"},
+          "result": {"type": "string"},
+          "source": {"$ref": "#/$defs/source"}
+        }
+      }
+    },
+    "file_decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "decision", "roles", "reasons"],
+        "properties": {
+          "path": {"type": "string"},
+          "decision": {"enum": ["required", "supporting", "rejected", "missed", "unresolved"]},
+          "roles": {"type": "array", "items": {"type": "string"}},
+          "reasons": {"type": "array", "items": {"type": "string"}},
+          "line_ranges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["start", "end"],
+              "properties": {
+                "start": {"type": "integer", "minimum": 1},
+                "end": {"type": "integer", "minimum": 1}
+              }
+            }
+          }
+        }
+      }
+    },
+    "relationship_edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["from", "relation", "to", "status", "source"],
+        "properties": {
+          "from": {"type": "string"},
+          "relation": {"type": "string"},
+          "to": {"type": "string"},
+          "status": {"enum": ["resolved", "unresolved", "conflicting"]},
+          "source": {"$ref": "#/$defs/source"}
+        }
+      }
+    },
+    "design_findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["field", "value", "status", "evidence"],
+        "properties": {
+          "field": {"enum": ["workload", "runtime", "build", "entrypoint", "configuration", "port", "storage", "internal_dependency", "external_dependency", "deployment"]},
+          "value": {},
+          "status": {"enum": ["confirmed", "inferred", "unknown", "conflicting"]},
+          "evidence": {"type": "array", "items": {"$ref": "#/$defs/source"}}
+        }
+      }
+    },
+    "scanner_misses": {"type": "array", "items": {"type": "object"}},
+    "rule_candidates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["scope", "kind", "condition", "action", "support"],
+        "properties": {
+          "scope": {"enum": ["universal", "language", "framework", "repository_shape"]},
+          "kind": {"enum": ["seed", "priority", "follow", "fallback", "stop", "exclude"]},
+          "condition": {"type": "object"},
+          "action": {"type": "object"},
+          "support": {"type": "string"},
+          "counterexample": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "stop_decision": {
+      "type": "object",
+      "required": ["stopped", "reason", "known_fields", "unknown_fields"],
+      "properties": {
+        "stopped": {"type": "boolean"},
+        "reason": {"type": "string"},
+        "known_fields": {"type": "array", "items": {"type": "string"}},
+        "unknown_fields": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "review": {
+      "type": "object",
+      "required": ["status", "reviewer", "reviewed_at"],
+      "properties": {
+        "status": {"enum": ["draft", "reviewed", "approved"]},
+        "reviewer": {"type": "string"},
+        "reviewed_at": {"type": "string", "format": "date-time"},
+        "notes": {"type": "string"}
+      }
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "required": ["path", "line_start", "line_end"],
+      "properties": {
+        "path": {"type": "string"},
+        "line_start": {"type": "integer", "minimum": 1},
+        "line_end": {"type": "integer", "minimum": 1},
+        "revision": {"type": "string"}
+      }
+    }
+  }
+}
