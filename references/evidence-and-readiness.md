@@ -21,6 +21,15 @@
 검색(scope=<repository-relative scope>, pattern=<glob 또는 검색식>, result=없음)
 ```
 
+## Runtime signal provenance
+
+`repository-evidence/v2`는 evidence 수집 경로를 최상위 `provenance`로 기록한다.
+
+- `EXTRACTED`: 언어별 runtime extractor가 명시적 source construct에서 수집했다.
+- `INFERRED`: universal scanner 또는 pattern pack의 정적 pattern에서 수집했다.
+
+이는 source 사실의 확실성을 나타내는 evidence `status`와 별개다. `EXTRACTED`는 runtime effect나 Kubernetes workload 판정이 아니라 인용한 source span에 검토된 construct가 존재한다는 뜻이다.
+
 ## 파일별 evidence cache
 
 Universal Scanner는 동일한 local checkout의 반복 분석에서 파일별 extraction output만 disposable local cache에 저장해 재사용할 수 있다. cache key에는 정규화된 repository identity, analysis root, repository-relative file path, file content hash, evidence schema version, extractor name/version, rule fingerprint이 들어간다. stat metadata는 cache lookup을 빠르게 하는 힌트일 뿐이며, content hash 확인 없이 재사용하지 않는다.
