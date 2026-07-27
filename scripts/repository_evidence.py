@@ -17,11 +17,20 @@ from typing import Any, Callable
 from repository_inventory import build_inventory, format_diagnostics, included_file_records
 
 
-EVIDENCE_SCHEMA_VERSION = "repository-evidence/v1"
+EVIDENCE_SCHEMA_VERSION = "repository-evidence/v2"
+LEGACY_V1_SCHEMA_VERSION = "repository-evidence/v1"
 EXTRACTOR_NAME = "repository_evidence"
 EXTRACTOR_VERSION = "1.0.0"
 RULE_FINGERPRINT = "universal-evidence-rules/v1"
 DEFAULT_CACHE_DIRECTORY = Path(tempfile.gettempdir()) / "analyze-repo-for-kubernetes-evidence-cache"
+ALLOWED_PROVENANCE = {"EXTRACTED", "INFERRED"}
+RUNTIME_EVIDENCE_KINDS = {
+    "runtime_background_registration",
+    "runtime_config_read",
+    "runtime_listener",
+    "runtime_outbound_connection",
+    "runtime_writable_path",
+}
 ALLOWED_EVIDENCE_KINDS = {
     "absence",
     "compose_env_key",
@@ -62,6 +71,7 @@ ALLOWED_EVIDENCE_KINDS = {
     "platform_process",
     "python_dependency_or_lock",
     "runtime_entrypoint_hint",
+    *RUNTIME_EVIDENCE_KINDS,
     "rust_cargo_hint",
 }
 EXCLUDED_PATH_PARTS = {
@@ -229,6 +239,7 @@ class EvidenceRecord:
     id: str
     kind: str
     status: str
+    provenance: str
     evidence: str
     data: dict[str, Any]
     source: dict[str, int | str] | None = None
@@ -254,10 +265,14 @@ def canonical_sha256(value: Any) -> str:
 def evidence_record_from_dict(value: Any) -> EvidenceRecord:
     if not isinstance(value, dict):
         raise ValueError("cached evidence record must be an object")
-    required_strings = ("id", "kind", "status", "evidence")
+    required_strings = ("id", "kind", "status", "provenance", "evidence")
     if any(not isinstance(value.get(key), str) for key in required_strings):
         raise ValueError("cached evidence record has invalid string fields")
-    if value["kind"] not in ALLOWED_EVIDENCE_KINDS or value["status"] not in {"confirmed", "inferred", "unknown", "conflict"}:
+    if (
+        value["kind"] not in ALLOWED_EVIDENCE_KINDS
+        or value["status"] not in {"confirmed", "inferred", "unknown", "conflict"}
+        or value["provenance"] not in ALLOWED_PROVENANCE
+    ):
         raise ValueError("cached evidence record has unsupported kind or status")
     data = value.get("data")
     if not isinstance(data, dict):
@@ -289,13 +304,21 @@ def evidence_record_from_dict(value: Any) -> EvidenceRecord:
         id=value["id"],
         kind=value["kind"],
         status=value["status"],
+        provenance=value["provenance"],
         evidence=value["evidence"],
         data=data,
         source=source,
         absence=absence,
         extractor=extractor,
     )
-    expected_id = stable_evidence_id(record.kind, record.status, record.data, record.source, record.absence)
+    expected_id = stable_evidence_id(
+        record.kind,
+        record.status,
+        record.data,
+        record.source,
+        record.absence,
+        record.provenance,
+    )
     if record.id != expected_id:
         raise ValueError("cached evidence record identity does not match its contents")
     return record
@@ -585,8 +608,27 @@ def stable_evidence_id(
     data: dict[str, Any],
     source: dict[str, int | str] | None = None,
     absence: dict[str, str] | None = None,
+    provenance: str = "INFERRED",
 ) -> str:
     # Status is mutable confidence metadata; it is not part of evidence identity.
+    identity = {
+        "absence": absence,
+        "data": data,
+        "kind": kind,
+        "provenance": provenance,
+        "source": source,
+    }
+    digest = hashlib.sha256(canonical_json(identity).encode("utf-8")).hexdigest()[:20]
+    return f"ev_{digest}"
+
+
+def stable_v1_evidence_id(
+    kind: str,
+    status: str,
+    data: dict[str, Any],
+    source: dict[str, int | str] | None = None,
+    absence: dict[str, str] | None = None,
+) -> str:
     identity = {
         "absence": absence,
         "data": data,
@@ -604,6 +646,7 @@ def build_evidence_record(
     status: str = "confirmed",
     source: dict[str, int | str] | None = None,
     absence: dict[str, str] | None = None,
+    provenance: str = "INFERRED",
 ) -> EvidenceRecord:
     if kind == "absence" and absence is None:
         absence = {
@@ -614,9 +657,10 @@ def build_evidence_record(
     if kind != "absence" and source is None:
         source = parse_positive_evidence(evidence)
     return EvidenceRecord(
-        id=stable_evidence_id(kind, status, data, source=source, absence=absence),
+        id=stable_evidence_id(kind, status, data, source=source, absence=absence, provenance=provenance),
         kind=kind,
         status=status,
+        provenance=provenance,
         evidence=evidence,
         data=data,
         source=source,
