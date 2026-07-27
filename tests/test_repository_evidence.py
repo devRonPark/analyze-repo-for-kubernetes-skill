@@ -13,6 +13,7 @@ SCRIPT = ROOT / "scripts" / "repository_evidence.py"
 VALIDATOR = ROOT / "scripts" / "validate_repository_evidence.py"
 sys.path.insert(0, str(ROOT / "scripts"))
 import repository_evidence as evidence_collector
+import runtime_signal_extractors
 
 
 class RepositoryEvidenceTests(unittest.TestCase):
@@ -68,6 +69,7 @@ class RepositoryEvidenceTests(unittest.TestCase):
     def test_collector_emits_stable_schema_identity_source_and_provenance(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
+            cache = Path(tmp) / "cache"
             repo.mkdir()
             (repo / "package.json").write_text(
                 '{"scripts":{"start":"node src/server.js"},"packageManager":"pnpm@9"}\n',
@@ -442,6 +444,37 @@ class RepositoryEvidenceTests(unittest.TestCase):
         runtime = [item for item in payload["evidence"] if item["kind"] in expected_kinds]
         self.assertEqual({item["kind"] for item in runtime}, expected_kinds)
         self.assertTrue(all(item["data"]["language"] == "go" for item in runtime))
+
+    def test_runtime_extractor_failure_isolated_and_reported(self):
+        class FailingNodeExtractor:
+            language = "node"
+            name = "failing_node"
+            version = "1.0.0"
+
+            def extract(self, path: str, lines: list[str]):
+                raise ValueError("API_TOKEN=must-not-leak")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            cache = Path(tmp) / "cache"
+            repo.mkdir()
+            (repo / "server.js").write_text("server.listen(3000)\n", encoding="utf-8")
+            (repo / "app.py").write_text("uvicorn.run(app, port=8100)\n", encoding="utf-8")
+            original = runtime_signal_extractors.EXTRACTORS["node"]
+            runtime_signal_extractors.EXTRACTORS["node"] = FailingNodeExtractor()
+            try:
+                payload = evidence_collector.scan_repository(repo, cache_directory=cache)
+                warm_payload = evidence_collector.scan_repository(repo, cache_directory=cache)
+            finally:
+                runtime_signal_extractors.EXTRACTORS["node"] = original
+
+        self.assertTrue(any(item["kind"] == "runtime_listener" for item in payload["evidence"]))
+        diagnostic = payload["diagnostics"]["runtime_extraction"][0]
+        self.assertEqual(diagnostic["path"], "server.js")
+        self.assertEqual(diagnostic["code"], "extractor_failure")
+        self.assertIn("[REDACTED]", diagnostic["message"])
+        self.assertNotIn("must-not-leak", diagnostic["message"])
+        self.assertEqual(warm_payload["diagnostics"], payload["diagnostics"])
 
     def test_per_file_cache_reuses_unchanged_evidence_and_matches_a_clean_run(self):
         with tempfile.TemporaryDirectory() as tmp:

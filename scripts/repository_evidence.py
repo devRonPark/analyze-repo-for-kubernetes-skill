@@ -345,6 +345,7 @@ class EvidenceCache:
         self.rule_fingerprint = rule_fingerprint
         self.diagnostics = diagnostics
         self.runtime_signals_enabled = runtime_signals_enabled
+        self.cached_runtime_diagnostics: dict[str, list[dict[str, str]]] = {}
         repository_identity = str(Path(snapshot.repository_root).resolve())
         self.namespace = canonical_sha256(
             {
@@ -442,15 +443,27 @@ class EvidenceCache:
             records = entry.get("records")
             if not isinstance(records, list):
                 raise ValueError("cached entry records must be a list")
+            runtime_diagnostics = entry.get("runtime_diagnostics", [])
+            if not isinstance(runtime_diagnostics, list) or not all(isinstance(item, dict) for item in runtime_diagnostics):
+                raise ValueError("cached runtime diagnostics must be a list")
             restored = [evidence_record_from_dict(record) for record in records]
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             self.diagnostics.corrupted += 1
             self.diagnostics.miss += 1
             return None
         self.diagnostics.hit += 1
+        self.cached_runtime_diagnostics[file_record.path] = runtime_diagnostics
         return restored
 
-    def put(self, file_record: FileRecord, records: list[EvidenceRecord]) -> None:
+    def cached_diagnostics_for(self, file_record: FileRecord) -> list[dict[str, str]]:
+        return self.cached_runtime_diagnostics.get(file_record.path, [])
+
+    def put(
+        self,
+        file_record: FileRecord,
+        records: list[EvidenceRecord],
+        runtime_diagnostics: list[dict[str, str]] | None = None,
+    ) -> None:
         if not self.enabled:
             return
         identity = self._cache_identity(file_record)
@@ -459,6 +472,7 @@ class EvidenceCache:
             "cache_key": cache_key,
             "identity": identity,
             "records": [evidence_record_to_dict(record) for record in records],
+            "runtime_diagnostics": runtime_diagnostics or [],
         }
         index = {
             "cache_key": cache_key,
@@ -1053,6 +1067,7 @@ def collect_file_evidence(
     repository_root: Path,
     file_record: FileRecord,
     runtime_signals_enabled: bool = True,
+    runtime_diagnostics: list[dict[str, str]] | None = None,
 ) -> list[EvidenceRecord]:
     path = file_record.path
     source = repository_root / path
@@ -1111,18 +1126,33 @@ def collect_file_evidence(
             )
     runtime_extractor = runtime_extractor_for(file_record.language) if runtime_signals_enabled else None
     if runtime_extractor is not None:
-        outcome = runtime_extractor.extract(path, lines)
         descriptor = {"name": runtime_extractor.name, "version": runtime_extractor.version}
-        for signal in outcome.signals:
-            records.append(
-                build_evidence_record(
-                    signal.kind,
-                    positive_evidence(path, signal.line),
-                    signal.data,
-                    provenance="EXTRACTED",
-                    extractor=descriptor,
+        try:
+            outcome = runtime_extractor.extract(path, lines)
+        except Exception as error:
+            if runtime_diagnostics is not None:
+                message = redact_sensitive_text(str(error))[:240]
+                runtime_diagnostics.append(
+                    {
+                        "path": path,
+                        "language": runtime_extractor.language,
+                        "extractor": runtime_extractor.name,
+                        "version": runtime_extractor.version,
+                        "code": "extractor_failure",
+                        "message": message,
+                    }
                 )
-            )
+        else:
+            for signal in outcome.signals:
+                records.append(
+                    build_evidence_record(
+                        signal.kind,
+                        positive_evidence(path, signal.line),
+                        signal.data,
+                        provenance="EXTRACTED",
+                        extractor=descriptor,
+                    )
+                )
     return dedupe_and_sort_evidence(records)
 
 
@@ -1130,16 +1160,20 @@ def collect_universal_evidence(
     snapshot: RepositorySnapshot,
     cache: EvidenceCache,
     runtime_signals_enabled: bool = True,
-) -> list[EvidenceRecord]:
+) -> tuple[list[EvidenceRecord], list[dict[str, str]]]:
     repository_root = Path(snapshot.repository_root)
     records: list[EvidenceRecord] = []
+    runtime_diagnostics: list[dict[str, str]] = []
     seen_container_definition = False
 
     for file_record in snapshot.files:
         cached_records = cache.get(file_record)
         if cached_records is None:
-            cached_records = collect_file_evidence(repository_root, file_record, runtime_signals_enabled)
-            cache.put(file_record, cached_records)
+            diagnostic_start = len(runtime_diagnostics)
+            cached_records = collect_file_evidence(repository_root, file_record, runtime_signals_enabled, runtime_diagnostics)
+            cache.put(file_record, cached_records, runtime_diagnostics[diagnostic_start:])
+        else:
+            runtime_diagnostics.extend(cache.cached_diagnostics_for(file_record))
         records.extend(cached_records)
         name = Path(file_record.path).name
         if name in {"Dockerfile", "Containerfile"} or name.startswith(("Dockerfile.", "Containerfile.")):
@@ -1155,7 +1189,10 @@ def collect_universal_evidence(
                 {"scope": scope, "pattern": "Dockerfile|Containerfile", "result": "없음"},
             )
         )
-    return dedupe_and_sort_evidence(records)
+    return dedupe_and_sort_evidence(records), sorted(
+        runtime_diagnostics,
+        key=lambda item: (item["path"], item["language"], item["extractor"], item["version"], item["code"]),
+    )
 
 
 def scan_repository(
@@ -1169,7 +1206,7 @@ def scan_repository(
     snapshot = snapshot_repository(target, subdirectory)
     diagnostics = cache_diagnostics or CacheDiagnostics()
     cache = EvidenceCache(cache_directory, snapshot, rule_fingerprint, diagnostics, runtime_signals_enabled)
-    evidence = collect_universal_evidence(snapshot, cache, runtime_signals_enabled)
+    evidence, runtime_diagnostics = collect_universal_evidence(snapshot, cache, runtime_signals_enabled)
     return {
         "schema_version": EVIDENCE_SCHEMA_VERSION,
         "snapshot": {
@@ -1177,6 +1214,7 @@ def scan_repository(
             "files": [asdict(record) for record in snapshot.files],
         },
         "evidence": [evidence_record_to_dict(record) for record in evidence],
+        "diagnostics": {"runtime_extraction": runtime_diagnostics},
     }
 
 
