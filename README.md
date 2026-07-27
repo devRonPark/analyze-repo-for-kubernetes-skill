@@ -206,6 +206,35 @@ python3 scripts/validate_regression.py tests/fixtures/regression/black_box_expec
 python3 scripts/run_black_box_eval.py --repo tests/fixtures/black_box_repo --report tests/fixtures/regression/black_box_report.md --expected tests/fixtures/regression/black_box_expected.json --output black-box-result.json
 ```
 
+### 전체 Skill repository 평가
+
+`scripts/run_repository_e2e_eval.py`는 pinned corpus manifest의 모든 저장소를 temporary directory에 checkout하고, 전체 Skill이 생성한 Markdown 보고서를 실제 checkout 기준으로 검증합니다. `--report-dir`에는 fixture ID와 같은 이름의 `<id>.md` 보고서를 두고, 선택한 `--expectations`에는 reviewed normalized expected facts를 둡니다. clone은 항상 `--allow-network`를 명시해야 합니다.
+
+```bash
+python3 scripts/run_repository_e2e_eval.py --manifest tests/fixtures/oss_runtime/manifest.json --report-dir /path/to/reports --expectations /path/to/expectations.json --allow-network --output repository-e2e-result.json
+```
+
+실제 Skill runtime을 연결할 때는 command가 Markdown report를 standard output으로 내보내야 하며, `--allow-live-runtime`도 명시해야 합니다. command는 checkout을 current working directory로 받고 `ANALYZE_REPO_FOR_KUBERNETES_TARGET`, `ANALYZE_REPO_FOR_KUBERNETES_FIXTURE_ID`, `ANALYZE_REPO_FOR_KUBERNETES_REPOSITORY_REVISION`, `ANALYZE_REPO_FOR_KUBERNETES_UPSTREAM`, `ANALYZE_REPO_FOR_KUBERNETES_REPORT_MODE`, `ANALYZE_REPO_FOR_KUBERNETES_PROMPT` 환경 변수를 받습니다. command가 checkout을 수정하거나 untracked file을 만들면 평가를 실패시킵니다.
+
+```bash
+python3 scripts/run_repository_e2e_eval.py --manifest tests/fixtures/oss_runtime/manifest.json --live-command '<Skill runtime command>' --allow-network --allow-live-runtime --output repository-e2e-result.json
+```
+
+expectations JSON은 manifest의 모든 fixture ID를 포함해야 합니다. 아래는 한 항목만 보인 축약 형식이며, 실제 file에는 나머지 fixture ID도 같은 수준으로 넣습니다.
+
+```json
+{
+  "schema_version": 1,
+  "comparison_fields": ["workload_candidates", "design_input_verdict"],
+  "repositories": {
+    "node-sql-pg": {
+      "workload_candidates": [],
+      "design_input_verdict": "추가 정보 필요"
+    }
+  }
+}
+```
+
 ## Codex 설치
 
 macOS, Linux, WSL 또는 Git Bash:
