@@ -95,7 +95,44 @@ class NodeRuntimeSignalExtractor:
         return RuntimeExtractionOutcome(signals)
 
 
-EXTRACTORS: dict[str, RuntimeSignalExtractor] = {"node": NodeRuntimeSignalExtractor()}
+class PythonRuntimeSignalExtractor:
+    language = "python"
+    name = "python_runtime_signals"
+    version = "1.0.0"
+
+    def extract(self, path: str, lines: list[str]) -> RuntimeExtractionOutcome:
+        if is_test_path(path):
+            return RuntimeExtractionOutcome([])
+        signals: list[RuntimeSignal] = []
+        for line_number, line in enumerate(lines, start=1):
+            for match in re.finditer(r"os\.(?:getenv\(\s*['\"]|environ\[\s*['\"])([A-Z][A-Z0-9_]*)", line):
+                if has_code_token(line, match.group(0).split("(")[0]):
+                    signals.append(RuntimeSignal("runtime_config_read", line_number, {"language": self.language, "key": match.group(1)}))
+            if has_code_token(line, "uvicorn.run") or has_code_token(line, ".run"):
+                port = re.search(r"\bport\s*=\s*(\d{1,5})", line)
+                host = re.search(r"\bhost\s*=\s*['\"]([^'\"]+)['\"]", line)
+                if port and (has_code_token(line, "uvicorn.run") or has_code_token(line, "app.run")):
+                    data: dict[str, Any] = {"language": self.language, "port": int(port.group(1))}
+                    if host:
+                        data["host"] = host.group(1)
+                    signals.append(RuntimeSignal("runtime_listener", line_number, data))
+            if has_code_token(line, "requests.get") and ("os.getenv" in line or "os.environ" in line):
+                key = re.search(r"os\.(?:getenv\(\s*['\"]|environ\[\s*['\"])([A-Z][A-Z0-9_]*)", line)
+                if key:
+                    signals.append(RuntimeSignal("runtime_outbound_connection", line_number, {"language": self.language, "mechanism": "http", "config_key": key.group(1)}))
+            if has_code_token(line, "open") and re.search(r"['\"]w['\"]", line):
+                key = re.search(r"os\.environ\[\s*['\"]([A-Z][A-Z0-9_]*)", line)
+                if key:
+                    signals.append(RuntimeSignal("runtime_writable_path", line_number, {"language": self.language, "path_config_key": key.group(1)}))
+            if has_code_token(line, ".add_job"):
+                signals.append(RuntimeSignal("runtime_background_registration", line_number, {"language": self.language, "registration": "scheduler.add_job"}))
+        return RuntimeExtractionOutcome(signals)
+
+
+EXTRACTORS: dict[str, RuntimeSignalExtractor] = {
+    "node": NodeRuntimeSignalExtractor(),
+    "python": PythonRuntimeSignalExtractor(),
+}
 
 
 def runtime_extractor_for(language: str | None) -> RuntimeSignalExtractor | None:

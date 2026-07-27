@@ -369,6 +369,35 @@ class RepositoryEvidenceTests(unittest.TestCase):
         self.assertFalse(any(item["kind"].startswith("runtime_") and item["provenance"] == "EXTRACTED" for item in disabled_payload["evidence"]))
         self.assertTrue(any(item["kind"] == "runtime_entrypoint_hint" for item in disabled_payload["evidence"]))
 
+    def test_python_runtime_signals_are_extracted_from_explicit_source_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            (repo / "app.py").write_text(
+                "import os\n"
+                "import uvicorn\n"
+                "import requests\n"
+                "database_url = os.getenv('DATABASE_URL')\n"
+                "requests.get(os.environ['API_URL'])\n"
+                "open(os.environ['DATA_PATH'], 'w')\n"
+                "scheduler.add_job(work, 'interval')\n"
+                "uvicorn.run(app, host='0.0.0.0', port=8100)\n"
+                "# uvicorn.run(app, port=9999)\n"
+                "example = 'open(\"/not-a-path\", \"w\")'\n",
+                encoding="utf-8",
+            )
+            payload = self.run_collector(repo, "--no-cache")
+
+        expected_kinds = {
+            "runtime_config_read", "runtime_listener", "runtime_outbound_connection",
+            "runtime_writable_path", "runtime_background_registration",
+        }
+        runtime = [item for item in payload["evidence"] if item["kind"] in expected_kinds]
+        self.assertEqual({item["kind"] for item in runtime}, expected_kinds)
+        self.assertTrue(all(item["data"]["language"] == "python" for item in runtime))
+        listener = next(item for item in runtime if item["kind"] == "runtime_listener")
+        self.assertEqual(listener["data"], {"language": "python", "host": "0.0.0.0", "port": 8100})
+
     def test_per_file_cache_reuses_unchanged_evidence_and_matches_a_clean_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
