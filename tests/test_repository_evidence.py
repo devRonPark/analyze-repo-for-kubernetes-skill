@@ -476,6 +476,29 @@ class RepositoryEvidenceTests(unittest.TestCase):
         self.assertNotIn("must-not-leak", diagnostic["message"])
         self.assertEqual(warm_payload["diagnostics"], payload["diagnostics"])
 
+    def test_runtime_extractor_version_invalidates_only_matching_language_cache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            cache = Path(tmp) / "cache"
+            repo.mkdir()
+            (repo / "server.js").write_text("server.listen(process.env.PORT || 3000)\n", encoding="utf-8")
+            (repo / "app.py").write_text("uvicorn.run(app, port=8100)\n", encoding="utf-8")
+            evidence_collector.scan_repository(repo, cache_directory=cache)
+            node = runtime_signal_extractors.EXTRACTORS["node"]
+            original_version = node.version
+            node.version = "1.0.1"
+            try:
+                diagnostics = evidence_collector.CacheDiagnostics()
+                cached = evidence_collector.scan_repository(repo, cache_directory=cache, cache_diagnostics=diagnostics)
+                clean = evidence_collector.scan_repository(repo, cache_directory=None)
+            finally:
+                node.version = original_version
+
+        self.assertEqual(diagnostics.hit, 1)
+        self.assertEqual(diagnostics.invalidated, 1)
+        self.assertEqual(diagnostics.miss, 1)
+        self.assertEqual(cached, clean)
+
     def test_per_file_cache_reuses_unchanged_evidence_and_matches_a_clean_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
