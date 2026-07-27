@@ -8,27 +8,30 @@ small, and independent of network access.
 
 ## Fixture model
 
-Each language receives one selected public OSS repository and a minimal fixture
-containing only source files needed to demonstrate all five runtime signal
-families: configuration read, listener, outbound connection, writable path,
-and background registration. Tests run only the copied fixture; they never
-clone, fetch, execute, import, or install the upstream repository.
+Each language receives a set of selected public OSS source fragments and a
+minimal fixture containing only files needed to demonstrate all five runtime
+signal families: configuration read, listener, outbound connection, writable
+path, and background registration. A fragment may come from a different
+repository when the current extractor's reviewed API boundary makes a single
+repository criterion unrepresentative. Tests run only the copied fixture; they
+never clone, fetch, execute, import, or install the upstream repository.
 
 ## Provenance manifest
 
-Every fixture has a machine-readable manifest recording the upstream GitHub
-URL, immutable commit SHA, license, copied upstream paths, and source retrieval
-date. The test asserts that the manifest and fixture source are present before
-scanning. Upstream contents are reviewed manually at the pinned commit before
-being copied.
+Every fixture has a machine-readable manifest recording, for every source
+fragment, the upstream GitHub URL, immutable commit SHA, license, copied
+upstream path, signal family, and source retrieval date. The test asserts that
+the manifest and fixture source are present before scanning. Upstream contents
+are reviewed manually at the pinned commit before being copied.
 
 ## Candidate selection
 
-Select one repository per language only when its license permits the stored
-source fixture, the pinned revision exposes all five signal families through
-the reviewed static APIs, and the selected source paths are small enough to
-understand independently. Prefer first-party source files over generated,
-test, example, vendored, or dependency code.
+Select a source fragment only when its license permits the stored fixture, the
+pinned revision exposes its assigned signal family through the reviewed static
+API, and the selected path is small enough to understand independently. Prefer
+first-party source files over generated, test, example, vendored, dependency,
+CI, or build code. Each language's fragment set must collectively cover all
+five signal families.
 
 ## Test contract
 
