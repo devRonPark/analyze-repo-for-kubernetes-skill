@@ -100,13 +100,25 @@ plain_remote_git_clone.py
 
 마지막 행이 실제로 발생할 가능성이 있다. 그 경우에도 spike는 목적을 달성한다. 잘못된 지점을 최적화하는 것을 막기 때문이다.
 
-## 미확인 항목
+## 미확인 항목 — 해소됨 (2026-07-27)
 
-구현 첫 단계에서 확인한다. 확인에 실패하면 그 사실 자체를 측정 보고서에 결과로 기록하고 진행한다.
+세 항목 모두 확인되었다.
 
-- Qwen Code의 비대화형 실행 플래그
-- Qwen이 token usage를 노출하는지
-- Qwen session log에서 읽은 파일 목록을 추출할 수 있는지
+| 항목 | 결과 |
+| --- | --- |
+| 비대화형 실행 | `qwen -p "<prompt>" -o json`. 인증은 `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL` 환경 변수만으로 동작한다. 프롬프트가 `131,072` bytes를 넘으면 `MAX_ARG_STRLEN` 때문에 `-p`가 실패하므로 stdin으로 전달한다 |
+| token usage 노출 | `-o json` 스트림의 `type: "result"` 이벤트에 `usage.input_tokens`, `usage.output_tokens`, `usage.cache_read_input_tokens`, `duration_ms`, `num_turns`가 들어 있다. `input_tokens`는 세션 내 모든 API request의 누적합이다 |
+| 읽은 파일 목록 추출 | `-o json` 스트림의 `message.content[]` 안 `type: "tool_use"` 블록에 `read_file`의 `file_path`와 `list_directory`의 `path`가 그대로 들어 있다. telemetry나 atime fallback은 불필요했다 |
+
+## 실행 결과
+
+측정과 판정은 [qwen-raw-read-spike-2026-07-27.md](../../../validation/qwen-raw-read-spike-2026-07-27.md)에 있다.
+
+결정 규칙 4행에 해당한다. 두 arm 모두 detailed 계약 통과에 실패했으므로 문제는 입력 방식이 아니라 저사양 모델의 계약 수행 능력이다.
+
+원래 가설은 기각되었다. Arm A는 119개 중 13개 파일만 읽고도 Arm B보다 input token을 `10.8`배 더 썼다. 병목은 읽은 파일 양이 아니라 agent step 수다.
+
+이 spec의 `범위 밖` 항목들(타입별 sanitizer 정식 구현, 공용 정책 모듈, gate run record 스키마)은 raw-read 방향이 보류되었으므로 착수하지 않는다.
 
 ## 범위 밖
 
