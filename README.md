@@ -160,7 +160,7 @@ python3 scripts/validate_report.py kubernetes-migration-assessment.md --mode det
 
 ## Evidence cache
 
-`scripts/repository_evidence.py`는 동일한 local checkout을 반복 분석할 때 파일별로 redacted evidence만 재사용하는 disposable local cache를 기본 사용한다. cache key는 정규화된 repository identity와 analysis root, 파일 content hash, evidence schema, extractor version, rule fingerprint을 포함한다. 파일 stat은 탐색 최적화에만 쓰며 content hash가 재사용의 정확성 경계다.
+`scripts/repository_evidence.py`는 동일한 local checkout을 반복 분석할 때 파일별로 redacted evidence만 재사용하는 disposable local cache를 기본 사용한다. cache key는 정규화된 repository identity와 analysis root, 파일 content hash, evidence schema, language별 runtime extractor version, runtime signal 활성화 상태, rule fingerprint을 포함한다. 파일 stat은 탐색 최적화에만 쓰며 content hash가 재사용의 정확성 경계다.
 
 cache는 분석 대상 repository 안에 쓰지 않으며 raw source body, LLM 판단, 최종 report를 저장하지 않는다. cache entry가 손상되거나 부분적으로 기록된 경우 해당 파일은 miss로 처리해 안전하게 다시 수집한다. cache를 사용하지 않아야 하는 실행에는 다음 옵션을 사용한다.
 
@@ -169,6 +169,12 @@ python3 scripts/repository_evidence.py /path/to/repository --no-cache --diagnost
 ```
 
 `--cache-dir <path>`로 disposable cache 위치를 지정할 수 있고, `--diagnostics`는 stderr에 `hit`, `miss`, `invalidated`, `corrupted`, `bypassed` 수를 출력한다. evidence JSON 자체에는 cache 상태를 넣지 않으므로 cached run과 clean run을 동일하게 비교할 수 있다.
+
+## Runtime signal evidence
+
+Scanner는 Node.js, Python, Java, Go source의 검토된 명시적 runtime construct에서만 configuration read, listener, outbound connection, writable path, background registration evidence를 수집한다. 이 결과는 `repository-evidence/v2`의 `provenance: EXTRACTED`로 기록하며, 기존 scanner/pattern evidence는 `INFERRED`로 기록한다. `status`는 source 사실의 확실성이며 provenance와 다른 메타데이터다.
+
+주석, string literal, README, dependency declaration, test-only source, framework default는 runtime signal을 만들지 않는다. `--no-runtime-signals`를 사용하면 universal evidence를 유지한 채 이 추출기만 끈다. extractor가 한 파일에서 실패하면 scan은 계속되고, redacted diagnostic은 JSON의 `diagnostics.runtime_extraction` 및 per-file cache outcome에 보존된다.
 
 ## 패키지 검사와 테스트
 

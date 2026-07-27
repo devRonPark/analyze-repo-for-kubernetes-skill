@@ -13,6 +13,7 @@ SCRIPT = ROOT / "scripts" / "repository_evidence.py"
 VALIDATOR = ROOT / "scripts" / "validate_repository_evidence.py"
 sys.path.insert(0, str(ROOT / "scripts"))
 import repository_evidence as evidence_collector
+import runtime_signal_extractors
 
 
 class RepositoryEvidenceTests(unittest.TestCase):
@@ -68,6 +69,7 @@ class RepositoryEvidenceTests(unittest.TestCase):
     def test_collector_emits_stable_schema_identity_source_and_provenance(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
+            cache = Path(tmp) / "cache"
             repo.mkdir()
             (repo / "package.json").write_text(
                 '{"scripts":{"start":"node src/server.js"},"packageManager":"pnpm@9"}\n',
@@ -89,10 +91,18 @@ class RepositoryEvidenceTests(unittest.TestCase):
         self.assertEqual(first.stdout, second.stdout)
 
         payload = json.loads(first.stdout)
-        self.assertEqual(payload["schema_version"], "repository-evidence/v1")
+        self.assertEqual(payload["schema_version"], "repository-evidence/v2")
         ids = [item["id"] for item in payload["evidence"]]
         self.assertEqual(len(ids), len(set(ids)))
         self.assertFalse(any(identifier.startswith("ev-000") for identifier in ids))
+        self.assertEqual({item["provenance"] for item in payload["evidence"]}, {"EXTRACTED", "INFERRED"})
+        self.assertTrue(
+            all(
+                item["kind"].startswith("runtime_")
+                for item in payload["evidence"]
+                if item["provenance"] == "EXTRACTED"
+            )
+        )
 
         line_counts = {entry["path"]: entry["line_count"] for entry in payload["snapshot"]["files"]}
         positive_items = [item for item in payload["evidence"] if item["kind"] != "absence"]
@@ -104,7 +114,8 @@ class RepositoryEvidenceTests(unittest.TestCase):
             self.assertGreaterEqual(source["end_line"], source["start_line"])
             self.assertLessEqual(source["end_line"], line_counts[source["path"]])
             self.assertEqual(item["evidence"], f"{source['path']}:{source['start_line']}")
-            self.assertEqual(item["extractor"]["name"], "repository_evidence")
+            expected_extractor = "node_runtime_signals" if item["provenance"] == "EXTRACTED" else "repository_evidence"
+            self.assertEqual(item["extractor"]["name"], expected_extractor)
             self.assertRegex(item["extractor"]["version"], r"^\d+\.\d+\.\d+$")
 
         absence = next(item for item in payload["evidence"] if item["kind"] == "absence")
@@ -144,6 +155,54 @@ class RepositoryEvidenceTests(unittest.TestCase):
         leaked_secret = json.loads(json.dumps(payload))
         leaked_secret["evidence"][positive_index]["data"]["snippet"] = "API_TOKEN=raw-secret-value"
         self.assert_validator_rejects(leaked_secret, "secret_value_leak")
+
+        missing_provenance = json.loads(json.dumps(payload))
+        missing_provenance["evidence"][positive_index].pop("provenance")
+        self.assert_validator_rejects(missing_provenance, "invalid_provenance")
+
+        invalid_extracted_provenance = json.loads(json.dumps(payload))
+        record = invalid_extracted_provenance["evidence"][positive_index]
+        record["provenance"] = "EXTRACTED"
+        record["id"] = evidence_collector.stable_evidence_id(
+            record["kind"],
+            record["status"],
+            record["data"],
+            record["source"],
+            provenance=record["provenance"],
+        )
+        self.assert_validator_rejects(invalid_extracted_provenance, "invalid_provenance")
+
+    def test_validator_accepts_v1_payload_with_historical_identity(self):
+        data = {"path": "package.json", "name": "package.json"}
+        source = {"path": "package.json", "start_line": 1, "end_line": 1}
+        payload = {
+            "schema_version": "repository-evidence/v1",
+            "snapshot": {
+                "repository_root": "/tmp/repo",
+                "analysis_root": "/tmp/repo",
+                "subdirectory": ".",
+                "revision": None,
+                "files": [
+                    {"path": "package.json", "size_bytes": 42, "extension": ".json", "line_count": 1},
+                ],
+            },
+            "evidence": [
+                {
+                    "id": evidence_collector.stable_v1_evidence_id("manifest", "confirmed", data, source),
+                    "kind": "manifest",
+                    "status": "confirmed",
+                    "evidence": "package.json:1",
+                    "data": data,
+                    "source": source,
+                    "extractor": {"name": "repository_evidence", "version": "1.0.0"},
+                }
+            ],
+        }
+
+        result = self.run_validator(payload)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout), {"valid": True, "errors": []})
 
     def test_validator_accepts_current_legacy_evidence_shape(self):
         legacy = {
@@ -241,6 +300,204 @@ class RepositoryEvidenceTests(unittest.TestCase):
         self.assertIn("API_TOKEN", rendered)
         self.assertIn("[REDACTED]", rendered)
         self.assertNotIn("do-not-leak-this-token", rendered)
+
+    def test_node_runtime_signals_are_extracted_from_explicit_source_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            source = repo / "src"
+            source.mkdir()
+            (source / "server.js").write_text(
+                "const fs = require('fs')\n"
+                "const { Client } = require('pg')\n"
+                "const db = new Client({ connectionString: process.env.DATABASE_URL })\n"
+                "server.listen(process.env.PORT || 3100, '0.0.0.0')\n"
+                "fs.writeFile(process.env.DATA_PATH, 'value')\n"
+                "setInterval(() => db.query('select 1'), 1000)\n"
+                "// server.listen(9999)\n"
+                "const example = 'fs.writeFile(\"/not-a-path\")'\n",
+                encoding="utf-8",
+            )
+            tests = repo / "tests"
+            tests.mkdir()
+            (tests / "server.test.js").write_text(
+                "server.listen(9876)\nfs.writeFile('/test-output', 'x')\n",
+                encoding="utf-8",
+            )
+            (repo / "README.md").write_text("server.listen(8765)\n", encoding="utf-8")
+            (repo / "package.json").write_text('{"dependencies":{"express":"*"}}\n', encoding="utf-8")
+
+            payload = self.run_collector(repo, "--no-cache")
+
+        expected_kinds = {
+            "runtime_config_read",
+            "runtime_listener",
+            "runtime_outbound_connection",
+            "runtime_writable_path",
+            "runtime_background_registration",
+        }
+        runtime = [item for item in payload["evidence"] if item["kind"] in expected_kinds]
+        self.assertEqual({item["kind"] for item in runtime}, expected_kinds)
+        self.assertTrue(all(item["provenance"] == "EXTRACTED" for item in runtime))
+        self.assertTrue(all(item["status"] == "confirmed" for item in runtime))
+        self.assertTrue(all(item["data"]["language"] == "node" for item in runtime))
+        self.assertTrue(all(item["source"]["path"] == "src/server.js" for item in runtime))
+        listener = next(item for item in runtime if item["kind"] == "runtime_listener")
+        self.assertEqual(listener["data"]["port"], 3100)
+        self.assertEqual(listener["data"]["host"], "0.0.0.0")
+        self.assertFalse(
+            any(item["data"].get("port") in {8765, 9876, 9999} for item in runtime if item["kind"] == "runtime_listener")
+        )
+        writable = next(item for item in runtime if item["kind"] == "runtime_writable_path")
+        self.assertEqual(writable["data"]["path_config_key"], "DATA_PATH")
+        self.assertFalse(
+            any(item["data"].get("path") == "/not-a-path" for item in runtime if item["kind"] == "runtime_writable_path")
+        )
+
+    def test_runtime_signals_can_be_disabled_independently(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            (repo / "server.js").write_text("server.listen(process.env.PORT || 3000)\n", encoding="utf-8")
+
+            enabled = self.run_collector_process(repo, "--no-cache")
+            disabled = self.run_collector_process(repo, "--no-cache", "--no-runtime-signals")
+
+        self.assertEqual(enabled.returncode, 0, enabled.stderr + enabled.stdout)
+        self.assertEqual(disabled.returncode, 0, disabled.stderr + disabled.stdout)
+        enabled_payload = json.loads(enabled.stdout)
+        disabled_payload = json.loads(disabled.stdout)
+        self.assertTrue(any(item["kind"] == "runtime_listener" for item in enabled_payload["evidence"]))
+        self.assertFalse(any(item["kind"].startswith("runtime_") and item["provenance"] == "EXTRACTED" for item in disabled_payload["evidence"]))
+        self.assertTrue(any(item["kind"] == "runtime_entrypoint_hint" for item in disabled_payload["evidence"]))
+
+    def test_python_runtime_signals_are_extracted_from_explicit_source_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            (repo / "app.py").write_text(
+                "import os\n"
+                "import uvicorn\n"
+                "import requests\n"
+                "database_url = os.getenv('DATABASE_URL')\n"
+                "requests.get(os.environ['API_URL'])\n"
+                "open(os.environ['DATA_PATH'], 'w')\n"
+                "scheduler.add_job(work, 'interval')\n"
+                "uvicorn.run(app, host='0.0.0.0', port=8100)\n"
+                "# uvicorn.run(app, port=9999)\n"
+                "example = 'open(\"/not-a-path\", \"w\")'\n",
+                encoding="utf-8",
+            )
+            payload = self.run_collector(repo, "--no-cache")
+
+        expected_kinds = {
+            "runtime_config_read", "runtime_listener", "runtime_outbound_connection",
+            "runtime_writable_path", "runtime_background_registration",
+        }
+        runtime = [item for item in payload["evidence"] if item["kind"] in expected_kinds]
+        self.assertEqual({item["kind"] for item in runtime}, expected_kinds)
+        self.assertTrue(all(item["data"]["language"] == "python" for item in runtime))
+        listener = next(item for item in runtime if item["kind"] == "runtime_listener")
+        self.assertEqual(listener["data"], {"language": "python", "host": "0.0.0.0", "port": 8100})
+
+    def test_java_runtime_signals_are_extracted_from_explicit_source_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            (repo / "App.java").write_text(
+                "String database = System.getenv(\"DATABASE_URL\");\n"
+                "DriverManager.getConnection(System.getenv(\"DATABASE_URL\"));\n"
+                "Files.write(Path.of(System.getenv(\"DATA_PATH\")), bytes);\n"
+                "server = HttpServer.create(new InetSocketAddress(\"0.0.0.0\", 8200), 0);\n"
+                "@Scheduled(fixedDelay = 1000)\n"
+                "void run() {}\n",
+                encoding="utf-8",
+            )
+            payload = self.run_collector(repo, "--no-cache")
+
+        expected_kinds = {
+            "runtime_config_read", "runtime_listener", "runtime_outbound_connection",
+            "runtime_writable_path", "runtime_background_registration",
+        }
+        runtime = [item for item in payload["evidence"] if item["kind"] in expected_kinds]
+        self.assertEqual({item["kind"] for item in runtime}, expected_kinds)
+        self.assertTrue(all(item["data"]["language"] == "java" for item in runtime))
+
+    def test_go_runtime_signals_are_extracted_from_explicit_source_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            (repo / "main.go").write_text(
+                "url := os.Getenv(\"DATABASE_URL\")\n"
+                "db, _ := sql.Open(\"postgres\", os.Getenv(\"DATABASE_URL\"))\n"
+                "os.WriteFile(os.Getenv(\"DATA_PATH\"), body, 0644)\n"
+                "http.ListenAndServe(\"0.0.0.0:8300\", handler)\n"
+                "cron.AddFunc(\"@every 1m\", work)\n",
+                encoding="utf-8",
+            )
+            payload = self.run_collector(repo, "--no-cache")
+
+        expected_kinds = {
+            "runtime_config_read", "runtime_listener", "runtime_outbound_connection",
+            "runtime_writable_path", "runtime_background_registration",
+        }
+        runtime = [item for item in payload["evidence"] if item["kind"] in expected_kinds]
+        self.assertEqual({item["kind"] for item in runtime}, expected_kinds)
+        self.assertTrue(all(item["data"]["language"] == "go" for item in runtime))
+
+    def test_runtime_extractor_failure_isolated_and_reported(self):
+        class FailingNodeExtractor:
+            language = "node"
+            name = "failing_node"
+            version = "1.0.0"
+
+            def extract(self, path: str, lines: list[str]):
+                raise ValueError("API_TOKEN=must-not-leak")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            cache = Path(tmp) / "cache"
+            repo.mkdir()
+            (repo / "server.js").write_text("server.listen(3000)\n", encoding="utf-8")
+            (repo / "app.py").write_text("uvicorn.run(app, port=8100)\n", encoding="utf-8")
+            original = runtime_signal_extractors.EXTRACTORS["node"]
+            runtime_signal_extractors.EXTRACTORS["node"] = FailingNodeExtractor()
+            try:
+                payload = evidence_collector.scan_repository(repo, cache_directory=cache)
+                warm_payload = evidence_collector.scan_repository(repo, cache_directory=cache)
+            finally:
+                runtime_signal_extractors.EXTRACTORS["node"] = original
+
+        self.assertTrue(any(item["kind"] == "runtime_listener" for item in payload["evidence"]))
+        diagnostic = payload["diagnostics"]["runtime_extraction"][0]
+        self.assertEqual(diagnostic["path"], "server.js")
+        self.assertEqual(diagnostic["code"], "extractor_failure")
+        self.assertIn("[REDACTED]", diagnostic["message"])
+        self.assertNotIn("must-not-leak", diagnostic["message"])
+        self.assertEqual(warm_payload["diagnostics"], payload["diagnostics"])
+
+    def test_runtime_extractor_version_invalidates_only_matching_language_cache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            cache = Path(tmp) / "cache"
+            repo.mkdir()
+            (repo / "server.js").write_text("server.listen(process.env.PORT || 3000)\n", encoding="utf-8")
+            (repo / "app.py").write_text("uvicorn.run(app, port=8100)\n", encoding="utf-8")
+            evidence_collector.scan_repository(repo, cache_directory=cache)
+            node = runtime_signal_extractors.EXTRACTORS["node"]
+            original_version = node.version
+            node.version = "1.0.1"
+            try:
+                diagnostics = evidence_collector.CacheDiagnostics()
+                cached = evidence_collector.scan_repository(repo, cache_directory=cache, cache_diagnostics=diagnostics)
+                clean = evidence_collector.scan_repository(repo, cache_directory=None)
+            finally:
+                node.version = original_version
+
+        self.assertEqual(diagnostics.hit, 1)
+        self.assertEqual(diagnostics.invalidated, 1)
+        self.assertEqual(diagnostics.miss, 1)
+        self.assertEqual(cached, clean)
 
     def test_per_file_cache_reuses_unchanged_evidence_and_matches_a_clean_run(self):
         with tempfile.TemporaryDirectory() as tmp:
