@@ -1,6 +1,6 @@
 ---
 name: analyze-repo-for-kubernetes
-description: Use when performing evidence-based analysis of an application repository for Kubernetes migration readiness, Docker Compose migration assessment, GitOps onboarding, or later manifest and Helm design, including monorepos and repositories without Dockerfiles. Produce analysis and minimum design inputs only; do not generate deployment artifacts.
+description: Use when performing evidence-based analysis of application repositories for Kubernetes migration readiness, Docker Compose migration assessment, GitOps onboarding, or design inputs, including monorepos and repositories without Dockerfiles. Produce analysis and minimum design inputs only; do not use for manifest/Helm generation or editing, live-cluster troubleshooting, existing-manifest-only review, general Kubernetes explanations, or app/containerization changes.
 ---
 
 # Analyze Repository for Kubernetes
@@ -227,6 +227,10 @@ logical source와 실제 network caller를 구분한다. package declaration만�
 - **상충됨:** 신뢰할 수 있는 근거가 서로 다른 값을 제시한다.
 
 존재하는 사실은 `path/to/file:line` 또는 `path/to/file:start-end` 형식으로 인용한다. 부재를 확인한 사실은 존재하지 않는 파일 라인을 만들지 말고 `검색(scope=<repository-relative scope>, pattern=<glob 또는 검색식>, result=없음)` 형식으로 기록한다.
+
+Universal Scanner의 JSON artifact는 `repository-evidence/v1` schema를 사용한다. 각 typed evidence record에는 deterministic stable ID, `path/start_line/end_line` 구조화 source span, human-readable `evidence` citation, extractor name과 semantic version을 함께 기록한다. Absence evidence는 source span 대신 repository-relative `scope`, `pattern`, `result: 없음`을 구조화해서 기록한다. `scripts/validate_repository_evidence.py`는 agent runtime 없이 schema, evidence kind/status enum, source bounds, duplicate IDs, repository-root escape, absence shape, secret leakage를 검증할 수 있어야 한다. Legacy `schema_version: 1` evidence JSON은 compatibility reader로 migration 후 검증한다.
+
+Universal Scanner는 semantic evidence와 별도로 `repository-inventory/v1` inventory artifact를 만들 수 있어야 한다. Inventory record는 normalized repository-relative path, path type, safe file metadata, optional content hash, language/config classification, exactly one disposition, and exactly one reason을 기록한다. Inventory disposition은 `included`, `ignored`, `generated`, `vendored`, `dependency_cache`, `binary`, `sensitive`, `symlink`, `too_large`, `unclassified`, `read_error`를 지원하며, symlink target을 따라가거나 repository root 밖 path를 읽지 않는다. `scripts/repository_evidence.py --inventory-output <path> --diagnostics`는 evidence JSON 기본 출력을 유지하면서 별도 inventory artifact와 compact diagnostics를 제공한다.
 
 `추정됨`에는 추론 이유를 쓴다. `미확인`에는 확인한 파일 또는 검색 범위와 부족한 정보를 쓴다. `상충됨`에는 양쪽 근거를 모두 기록한다.
 

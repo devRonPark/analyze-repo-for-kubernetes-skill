@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "case": {
+    "id": "node-api-compose-postgres-quality",
+    "fixture_repository": "tests/fixtures/black_box_repo",
+    "prompt": "Use Local path: tests/fixtures/black_box_repo and produce Kubernetes design inputs.",
+    "report_mode": "summary",
+    "value_threshold": 0.05,
+    "reconciles_closed_dependencies": ["#22", "#23"],
+    "reconciliation": "Closed/not-planned dependencies are covered by validate_report.py schema/citation checks and the #27 normalized report model."
+  },
+  "expected": {
+    "workload_candidates": ["api"],
+    "excluded_candidates": ["shared-utils"],
+    "repository_defined_runtime_dependencies": ["postgres"],
+    "external_runtime_dependencies": [],
+    "production_startup_commands": {
+      "api": "npm start"
+    },
+    "listener_ports": {
+      "api": ["8080"]
+    },
+    "design_input_verdict": "추가 정보 필요"
+  }
+}

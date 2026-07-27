@@ -1,0 +1,5 @@
+{
+  "name": "black-box-fixture",
+  "private": true,
+  "workspaces": ["services/*", "packages/*"]
+}
