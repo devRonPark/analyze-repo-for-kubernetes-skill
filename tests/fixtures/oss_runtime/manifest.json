@@ -1,0 +1,108 @@
+{
+  "fixtures": [
+    {
+      "id": "node-sql-pg",
+      "language": "node",
+      "fixture_path": "node/sql-pg",
+      "source_path": "src/sql.query.js",
+      "upstream": "https://github.com/Sharaal/sql-pg",
+      "commit": "85733750e3acd90b1cd227f5de4838964a2bdf04",
+      "license": "MIT",
+      "upstream_path": "src/sql.query.js",
+      "upstream_lines": [1, 15],
+      "retrieved_on": "2026-07-27",
+      "expected_runtime_kinds": ["runtime_config_read", "runtime_outbound_connection"]
+    },
+    {
+      "id": "node-express",
+      "language": "node",
+      "fixture_path": "node/express",
+      "source_path": "lib/application.js",
+      "upstream": "https://github.com/expressjs/express",
+      "commit": "ae6dd37680e3a00618d6c8a3e522f0ee4eeba1a4",
+      "license": "MIT",
+      "upstream_path": "lib/application.js",
+      "upstream_lines": [1, 28],
+      "retrieved_on": "2026-07-27",
+      "expected_runtime_kinds": []
+    },
+    {
+      "id": "python-vpc-lattice",
+      "language": "python",
+      "fixture_path": "python/vpc-lattice",
+      "source_path": "backend.py",
+      "upstream": "https://github.com/aws-samples/build-secure-multi-account-vpc-connnectivity-applications-with-amazon-vpc-lattice",
+      "commit": "d8265321cb1a61395ba8ee39e066e1bcef28c33d",
+      "license": "MIT-0",
+      "upstream_path": "applications/apps-eks/backend.py",
+      "upstream_lines": [1, 23],
+      "retrieved_on": "2026-07-27",
+      "expected_runtime_kinds": ["runtime_config_read", "runtime_listener", "runtime_outbound_connection"]
+    },
+    {
+      "id": "python-click",
+      "language": "python",
+      "fixture_path": "python/click",
+      "source_path": "core.py",
+      "upstream": "https://github.com/pallets/click",
+      "commit": "00e592cea702e0b2caa0dee42489fdb1c22cd845",
+      "license": "BSD-3-Clause",
+      "upstream_path": "src/click/core.py",
+      "upstream_lines": [1, 28],
+      "retrieved_on": "2026-07-27",
+      "expected_runtime_kinds": []
+    },
+    {
+      "id": "java-gson",
+      "language": "java",
+      "fixture_path": "java/gson",
+      "source_path": "Gson.java",
+      "upstream": "https://github.com/google/gson",
+      "commit": "aebc51a56ca0793c13b841c29f73433b82446695",
+      "license": "Apache-2.0",
+      "upstream_path": "gson/src/main/java/com/google/gson/Gson.java",
+      "upstream_lines": [1, 28],
+      "retrieved_on": "2026-07-27",
+      "expected_runtime_kinds": []
+    },
+    {
+      "id": "java-commons-lang",
+      "language": "java",
+      "fixture_path": "java/commons-lang",
+      "source_path": "Validate.java",
+      "upstream": "https://github.com/apache/commons-lang",
+      "commit": "a316188a6d03b60528ed03e24b7266035007ebb4",
+      "license": "Apache-2.0",
+      "upstream_path": "src/main/java/org/apache/commons/lang3/Validate.java",
+      "upstream_lines": [1, 28],
+      "retrieved_on": "2026-07-27",
+      "expected_runtime_kinds": []
+    },
+    {
+      "id": "go-plandex",
+      "language": "go",
+      "fixture_path": "go/plandex",
+      "source_path": "run.go",
+      "upstream": "https://github.com/plandex-ai/plandex",
+      "commit": "e2d772072efadbe41d2946d97d79be55532dbab5",
+      "license": "MIT",
+      "upstream_path": "app/cli/stream_tui/run.go",
+      "upstream_lines": [88, 108],
+      "retrieved_on": "2026-07-27",
+      "expected_runtime_kinds": ["runtime_config_read", "runtime_writable_path"]
+    },
+    {
+      "id": "go-cobra",
+      "language": "go",
+      "fixture_path": "go/cobra",
+      "source_path": "command.go",
+      "upstream": "https://github.com/spf13/cobra",
+      "commit": "adbc8813901bba65827259daa8e22ff94ec1f30e",
+      "license": "Apache-2.0",
+      "upstream_path": "command.go",
+      "upstream_lines": [1, 28],
+      "retrieved_on": "2026-07-27",
+      "expected_runtime_kinds": []
+    }
+  ]
+}
