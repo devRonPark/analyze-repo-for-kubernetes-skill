@@ -94,8 +94,7 @@ spec의 `미확인 항목` 세 가지는 계획 작성 중에 모두 해소되�
 - [x] **Step 1: 모델 id를 조회해 `auth.env` 생성**
 
 ```bash
-MODEL=$(curl -s -m 10 http://172.16.4.249:30000/v1/models \
-  | python3 -c "import json,sys; print(json.load(sys.stdin)['data'][0]['id'])")
+MODEL=$(curl -s -m 10 http://172.16.4.249:30000/v1/models | python3 -c "import json,sys; print(json.load(sys.stdin)['data'][0]['id'])")
 cat > "$SCRATCH/auth.env" <<EOF
 export OPENAI_BASE_URL=http://172.16.4.249:30000/v1
 export OPENAI_API_KEY=EMPTY
@@ -113,8 +112,7 @@ source "$SCRATCH/auth.env"
 rm -rf "$SCRATCH/smoke" && mkdir -p "$SCRATCH/smoke/repo"
 printf 'server:\n  port: 8080\n' > "$SCRATCH/smoke/repo/application.yml"
 cd "$SCRATCH/smoke/repo"
-timeout 300 qwen -p "Read application.yml in the current directory and reply with only the port number." \
-  -o json > "$SCRATCH/smoke/out.json" 2> "$SCRATCH/smoke/err.txt"
+timeout 300 qwen -p "Read application.yml in the current directory and reply with only the port number." -o json > "$SCRATCH/smoke/out.json" 2> "$SCRATCH/smoke/err.txt"
 echo "exit=$?"
 ```
 
@@ -318,10 +316,7 @@ spike 스크립트는 커밋하지 않는다.
 ```bash
 source "$SCRATCH/auth.env"
 rm -rf "$SCRATCH/clone"
-python3 "$SKILL_ROOT/scripts/plain_remote_git_clone.py" \
-  --url https://github.com/spring-projects/spring-petclinic \
-  --destination "$SCRATCH/clone" \
-  --revision f182358d02e4a68e52bdbabf55ca7800288511e7
+python3 "$SKILL_ROOT/scripts/plain_remote_git_clone.py" --url https://github.com/spring-projects/spring-petclinic --destination "$SCRATCH/clone" --revision f182358d02e4a68e52bdbabf55ca7800288511e7
 ```
 
 Expected: `state` `resolved`, `revision`이 `f182358d02e4a68e52bdbabf55ca7800288511e7`로 끝나는 JSON 한 줄.
@@ -385,8 +380,7 @@ PYEOF
 
 ```bash
 rm -rf "$SCRATCH/workspace"
-python3 "$SCRATCH/build_workspace.py" "$SCRATCH/clone" "$SCRATCH/workspace" \
-  > "$SCRATCH/workspace-manifest.json"
+python3 "$SCRATCH/build_workspace.py" "$SCRATCH/clone" "$SCRATCH/workspace" > "$SCRATCH/workspace-manifest.json"
 python3 -c "
 import json
 m = json.load(open('$SCRATCH/workspace-manifest.json'))
@@ -475,8 +469,7 @@ Expected: `Qwen 스킬 설치 완료`.
 source "$SCRATCH/auth.env"
 cd "$SCRATCH/workspace"
 START=$(date +%s%3N)
-timeout 3600 qwen -p "$(cat "$SCRATCH/prompt-arm-a.md")" -o json \
-  > "$SCRATCH/arm-a.transcript.json" 2> "$SCRATCH/arm-a.stderr"
+timeout 3600 qwen -p "$(cat "$SCRATCH/prompt-arm-a.md")" -o json > "$SCRATCH/arm-a.transcript.json" 2> "$SCRATCH/arm-a.stderr"
 echo "exit=$?"
 END=$(date +%s%3N)
 echo "WALL_MS=$((END - START))" | tee "$SCRATCH/arm-a.wall"
@@ -513,9 +506,7 @@ print({k: r[k] for k in ('is_error','duration_ms','num_turns','input_tokens','ou
 - [ ] **Step 6: 계약 검증**
 
 ```bash
-python3 "$SKILL_ROOT/scripts/validate_report.py" "$SCRATCH/arm-a.report.md" \
-  --mode detailed --repo-root "$SCRATCH/workspace" \
-  > "$SCRATCH/arm-a.validate.txt" 2>&1
+python3 "$SKILL_ROOT/scripts/validate_report.py" "$SCRATCH/arm-a.report.md" --mode detailed --repo-root "$SCRATCH/workspace" > "$SCRATCH/arm-a.validate.txt" 2>&1
 echo "validate_exit=$?" | tee -a "$SCRATCH/arm-a.validate.txt"
 ```
 
@@ -541,8 +532,7 @@ arm B는 evidence JSON만 받는다. workspace 경로를 주지 않는다. 입�
 
 ```bash
 START=$(date +%s%3N)
-python3 "$SKILL_ROOT/scripts/repository_evidence.py" "$SCRATCH/clone" \
-  --output "$SCRATCH/evidence.json"
+python3 "$SKILL_ROOT/scripts/repository_evidence.py" "$SCRATCH/clone" --output "$SCRATCH/evidence.json"
 END=$(date +%s%3N)
 echo "SCANNER_MS=$((END - START))" | tee "$SCRATCH/arm-b.scanner"
 python3 -c "
@@ -595,8 +585,7 @@ source "$SCRATCH/auth.env"
 mkdir -p "$SCRATCH/arm-b-cwd"
 cd "$SCRATCH/arm-b-cwd"
 START=$(date +%s%3N)
-timeout 3600 qwen -p "$(cat "$SCRATCH/prompt-arm-b.md")" -o json \
-  > "$SCRATCH/arm-b.transcript.json" 2> "$SCRATCH/arm-b.stderr"
+timeout 3600 qwen -p "$(cat "$SCRATCH/prompt-arm-b.md")" -o json > "$SCRATCH/arm-b.transcript.json" 2> "$SCRATCH/arm-b.stderr"
 echo "exit=$?"
 END=$(date +%s%3N)
 echo "WALL_MS=$((END - START))" | tee "$SCRATCH/arm-b.wall"
@@ -631,9 +620,7 @@ Expected: `read_file_count`가 `0`이거나 매우 낮음. 높으면 arm B가 �
 - [ ] **Step 6: 계약 검증**
 
 ```bash
-python3 "$SKILL_ROOT/scripts/validate_report.py" "$SCRATCH/arm-b.report.md" \
-  --mode detailed --repo-root "$SCRATCH/clone" \
-  > "$SCRATCH/arm-b.validate.txt" 2>&1
+python3 "$SKILL_ROOT/scripts/validate_report.py" "$SCRATCH/arm-b.report.md" --mode detailed --repo-root "$SCRATCH/clone" > "$SCRATCH/arm-b.validate.txt" 2>&1
 echo "validate_exit=$?" | tee -a "$SCRATCH/arm-b.validate.txt"
 ```
 
