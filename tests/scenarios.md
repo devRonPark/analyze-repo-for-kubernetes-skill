@@ -239,6 +239,17 @@ Expected behavior:
 - validator, source span, declared positive runtime evidence 계약을 통과한다
 - 네트워크를 사용하므로 환경 변수가 없을 때 기본 unittest와 CI에서 skip한다
 
+## Scenario 13 — 전체 Skill repository 평가 파이프라인
+
+각 pinned checkout에 대한 전체 Skill Markdown report를 `run_repository_e2e_eval.py`로 검증한다.
+
+Expected behavior:
+
+- clone은 `--allow-network`, external Skill runtime command는 `--allow-live-runtime` 없이는 실행하지 않는다
+- report directory 또는 live command stdout 중 하나만 입력으로 받고, live command는 checkout을 current working directory로 사용한다
+- report validator가 각 checkout의 실제 file:line citation을 검증하고 normalized result를 하나의 JSON artifact로 집계한다
+- reviewed expectations가 있으면 manifest의 모든 fixture ID와 선언된 comparison field를 비교하고, 불일치는 pipeline 실패로 기록한다
+
 ## Regression Fixture Procedure
 
 When a rule changes, keep the legacy repeated-output fixture in `tests/fixtures/regression/expected.json` limited to fixture-schema validation. For black-box regression, run the skill or an explicitly captured report against `tests/fixtures/black_box_repo`, validate the Markdown report with `scripts/validate_report.py`, normalize it with `scripts/normalize_report.py`, and compare it to `tests/fixtures/regression/black_box_expected.json`. The normalized comparison permits no differences in deployment candidates, dependencies, excluded items, repository launch definitions, operating-environment baseline evidence or design-input verdict. Closed/not-planned dependencies `#22` and `#23` are reconciled through the current `validate_report.py` contract and the normalized report model.
