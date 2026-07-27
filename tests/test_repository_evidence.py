@@ -89,10 +89,11 @@ class RepositoryEvidenceTests(unittest.TestCase):
         self.assertEqual(first.stdout, second.stdout)
 
         payload = json.loads(first.stdout)
-        self.assertEqual(payload["schema_version"], "repository-evidence/v1")
+        self.assertEqual(payload["schema_version"], "repository-evidence/v2")
         ids = [item["id"] for item in payload["evidence"]]
         self.assertEqual(len(ids), len(set(ids)))
         self.assertFalse(any(identifier.startswith("ev-000") for identifier in ids))
+        self.assertEqual({item["provenance"] for item in payload["evidence"]}, {"INFERRED"})
 
         line_counts = {entry["path"]: entry["line_count"] for entry in payload["snapshot"]["files"]}
         positive_items = [item for item in payload["evidence"] if item["kind"] != "absence"]
@@ -144,6 +145,54 @@ class RepositoryEvidenceTests(unittest.TestCase):
         leaked_secret = json.loads(json.dumps(payload))
         leaked_secret["evidence"][positive_index]["data"]["snippet"] = "API_TOKEN=raw-secret-value"
         self.assert_validator_rejects(leaked_secret, "secret_value_leak")
+
+        missing_provenance = json.loads(json.dumps(payload))
+        missing_provenance["evidence"][positive_index].pop("provenance")
+        self.assert_validator_rejects(missing_provenance, "invalid_provenance")
+
+        invalid_extracted_provenance = json.loads(json.dumps(payload))
+        record = invalid_extracted_provenance["evidence"][positive_index]
+        record["provenance"] = "EXTRACTED"
+        record["id"] = evidence_collector.stable_evidence_id(
+            record["kind"],
+            record["status"],
+            record["data"],
+            record["source"],
+            provenance=record["provenance"],
+        )
+        self.assert_validator_rejects(invalid_extracted_provenance, "invalid_provenance")
+
+    def test_validator_accepts_v1_payload_with_historical_identity(self):
+        data = {"path": "package.json", "name": "package.json"}
+        source = {"path": "package.json", "start_line": 1, "end_line": 1}
+        payload = {
+            "schema_version": "repository-evidence/v1",
+            "snapshot": {
+                "repository_root": "/tmp/repo",
+                "analysis_root": "/tmp/repo",
+                "subdirectory": ".",
+                "revision": None,
+                "files": [
+                    {"path": "package.json", "size_bytes": 42, "extension": ".json", "line_count": 1},
+                ],
+            },
+            "evidence": [
+                {
+                    "id": evidence_collector.stable_v1_evidence_id("manifest", "confirmed", data, source),
+                    "kind": "manifest",
+                    "status": "confirmed",
+                    "evidence": "package.json:1",
+                    "data": data,
+                    "source": source,
+                    "extractor": {"name": "repository_evidence", "version": "1.0.0"},
+                }
+            ],
+        }
+
+        result = self.run_validator(payload)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout), {"valid": True, "errors": []})
 
     def test_validator_accepts_current_legacy_evidence_shape(self):
         legacy = {

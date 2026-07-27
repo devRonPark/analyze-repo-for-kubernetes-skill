@@ -10,12 +10,16 @@ from typing import Any
 
 from repository_evidence import (
     ALLOWED_EVIDENCE_KINDS,
+    ALLOWED_PROVENANCE,
     EVIDENCE_SCHEMA_VERSION,
     EXTRACTOR_NAME,
     EXTRACTOR_VERSION,
+    LEGACY_V1_SCHEMA_VERSION,
+    RUNTIME_EVIDENCE_KINDS,
     parse_positive_evidence,
     redact_sensitive_text,
     stable_evidence_id,
+    stable_v1_evidence_id,
 )
 
 
@@ -113,9 +117,22 @@ def normalize_legacy_payload(payload: dict[str, Any], errors: list[dict[str, str
             normalized_record.pop("absence", None)
             absence = None
         normalized_record["extractor"] = {"name": EXTRACTOR_NAME, "version": EXTRACTOR_VERSION}
+        normalized_record["provenance"] = "INFERRED"
         normalized_record["id"] = stable_evidence_id(kind, status, data, source=source, absence=absence)
         normalized_records.append(normalized_record)
     normalized["evidence"] = normalized_records
+    return normalized
+
+
+def normalize_v1_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(payload)
+    normalized["schema_version"] = EVIDENCE_SCHEMA_VERSION
+    evidence = payload.get("evidence")
+    if isinstance(evidence, list):
+        normalized["evidence"] = [
+            {**record, "provenance": "INFERRED"} if isinstance(record, dict) else record
+            for record in evidence
+        ]
     return normalized
 
 
@@ -187,7 +204,12 @@ def validate_absence(record: dict[str, Any], index: int, errors: list[dict[str, 
         errors.append(error("invalid_absence", "absence result must be 없음", f"{pointer}.result"))
 
 
-def validate_evidence_records(payload: dict[str, Any], line_counts: dict[str, int], errors: list[dict[str, str]]) -> None:
+def validate_evidence_records(
+    payload: dict[str, Any],
+    line_counts: dict[str, int],
+    errors: list[dict[str, str]],
+    legacy_v1_identity: bool = False,
+) -> None:
     evidence = payload.get("evidence")
     if not isinstance(evidence, list):
         errors.append(error("invalid_schema", "evidence must be a list", "$.evidence"))
@@ -210,11 +232,16 @@ def validate_evidence_records(payload: dict[str, Any], line_counts: dict[str, in
 
         kind = record.get("kind")
         status = record.get("status")
+        provenance = record.get("provenance")
         data = record.get("data")
         if kind not in ALLOWED_EVIDENCE_KINDS:
             errors.append(error("unknown_evidence_kind", "evidence kind is not in the repository evidence enum", f"{pointer}.kind"))
         if status not in ALLOWED_STATUSES:
             errors.append(error("unknown_evidence_status", "evidence status is not in the repository evidence enum", f"{pointer}.status"))
+        if provenance not in ALLOWED_PROVENANCE:
+            errors.append(error("invalid_provenance", "evidence provenance must be EXTRACTED or INFERRED", f"{pointer}.provenance"))
+        elif provenance == "EXTRACTED" and kind not in RUNTIME_EVIDENCE_KINDS:
+            errors.append(error("invalid_provenance", "EXTRACTED provenance is reserved for runtime evidence kinds", f"{pointer}.provenance"))
         if not isinstance(data, dict):
             errors.append(error("invalid_schema", "evidence data must be an object", f"{pointer}.data"))
             data = {}
@@ -238,7 +265,11 @@ def validate_evidence_records(payload: dict[str, Any], line_counts: dict[str, in
             absence = None
 
         if isinstance(identifier, str) and isinstance(kind, str) and isinstance(status, str):
-            expected_id = stable_evidence_id(kind, status, data, source=source, absence=absence)
+            expected_id = (
+                stable_v1_evidence_id(kind, status, data, source=source, absence=absence)
+                if legacy_v1_identity
+                else stable_evidence_id(kind, status, data, source=source, absence=absence, provenance=str(provenance))
+            )
             if identifier != expected_id:
                 errors.append(error("stable_id_mismatch", "evidence id does not match canonical identity", f"{pointer}.id"))
 
@@ -253,11 +284,18 @@ def validate_payload(raw_payload: Any) -> list[dict[str, str]]:
         return [error("invalid_schema", "artifact root must be an object", "$")]
 
     schema_version = raw_payload.get("schema_version")
-    if schema_version not in {EVIDENCE_SCHEMA_VERSION, 1}:
+    if schema_version not in {EVIDENCE_SCHEMA_VERSION, LEGACY_V1_SCHEMA_VERSION, 1}:
         errors.append(error("unsupported_schema_version", "unsupported repository evidence schema version", "$.schema_version"))
         return errors
 
-    payload = normalize_legacy_payload(raw_payload, errors)
+    legacy_v1_identity = schema_version == LEGACY_V1_SCHEMA_VERSION
+    payload = (
+        normalize_legacy_payload(raw_payload, errors)
+        if schema_version == 1
+        else normalize_v1_payload(raw_payload)
+        if legacy_v1_identity
+        else raw_payload
+    )
     if payload is None or errors:
         return errors
     snapshot = payload.get("snapshot")
@@ -266,7 +304,7 @@ def validate_payload(raw_payload: Any) -> list[dict[str, str]]:
         return errors
 
     line_counts = line_counts_by_path(snapshot, errors)
-    validate_evidence_records(payload, line_counts, errors)
+    validate_evidence_records(payload, line_counts, errors, legacy_v1_identity=legacy_v1_identity)
     return errors
 
 
