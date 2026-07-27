@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "id": "node-production-monorepo-container-boundary",
+  "status": "candidate",
+  "scope": "node",
+  "supported_by": ["node-n8n"],
+  "contrasted_with": ["node-nest"],
+  "problem": "A Node.js monorepo root manifest does not reliably identify the deployable workload. Framework workspaces and production application monorepos can look similar at the root.",
+  "policy": [
+    {
+      "order": 1,
+      "when": {"production_container_definition": true},
+      "action": "seed_from_container_definition",
+      "extract": ["ENTRYPOINT", "CMD", "EXPOSE", "USER", "WORKDIR", "writable_home", "symlinked_executable"]
+    },
+    {
+      "order": 2,
+      "when": {"entrypoint_or_cmd_delegates": true},
+      "action": "follow_delegation_chain",
+      "until": "language_executable_or_command_registry"
+    },
+    {
+      "order": 3,
+      "when": {"resolved_executable_is_inside_subpackage": true},
+      "action": "promote_subpackage_to_workload_candidate",
+      "also": "retain_root_manifest_as_workspace_and_build_context"
+    },
+    {
+      "order": 4,
+      "when": {"large_plugin_or_integration_catalog": true},
+      "action": "defer_catalog_deep_scan",
+      "until": "core_process_modes_and_configuration_are_resolved"
+    },
+    {
+      "order": 5,
+      "when": {"primary_entrypoint_port_and_state_path_known": true},
+      "action": "stop_broad_scan",
+      "next": ["target CLI command registry", "target configuration schema", "target worker commands"]
+    }
+  ],
+  "classification_guard": {
+    "do_not_assume": "root package.json means root production workload",
+    "framework_workspace_signal": "root has build/test/publish scripts but lacks production execution evidence",
+    "production_monorepo_signal": "production image or deployment definition resolves to an executable within a subpackage"
+  },
+  "expected_context_effect": {
+    "reduces": ["all-package source scanning", "plugin catalog scanning", "test and integration traversal"],
+    "preserves": ["runtime boundary", "entrypoint chain", "port", "state path", "multi-process follow-up"]
+  },
+  "promotion_gate": {
+    "minimum_supporting_observations": 3,
+    "required_repository_shapes": ["production-monorepo", "framework-workspace"],
+    "pending": ["validate n8n source ranges against pinned checkout", "test against another production Node monorepo"]
+  }
+}
