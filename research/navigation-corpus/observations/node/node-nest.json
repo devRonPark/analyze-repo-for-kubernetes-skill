@@ -1,0 +1,264 @@
+{
+  "schema_version": 1,
+  "corpus_id": "node-nest",
+  "repository": "nestjs/nest",
+  "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e",
+  "language": "node",
+  "repository_shape": "framework-monorepo-with-runnable-samples",
+  "analysis_scope": ".",
+  "workload_candidates": [
+    {
+      "id": "sample-01-cats-app",
+      "root": "sample/01-cats-app",
+      "role": "sample HTTP API application",
+      "status": "confirmed",
+      "evidence": [
+        {"path": "sample/01-cats-app/package.json", "line_start": 8, "line_end": 21, "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e"},
+        {"path": "sample/01-cats-app/src/main.ts", "line_start": 7, "line_end": 14, "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e"}
+      ]
+    }
+  ],
+  "navigation_steps": [
+    {
+      "order": 1,
+      "action": "seed",
+      "target": "package.json",
+      "reason": "Determine whether the repository root is a deployable Node.js application or a build/publish workspace.",
+      "result": "Root scripts build, test, publish and build samples, but expose no production start command. Root is the Nest framework workspace rather than an application workload.",
+      "source": {"path": "package.json", "line_start": 18, "line_end": 53, "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e"}
+    },
+    {
+      "order": 2,
+      "action": "follow",
+      "target": "tsconfig.json",
+      "reason": "Resolve the compilation scope referenced by the root build script.",
+      "result": "The compiler scope targets packages and integration code and maps multiple @nestjs packages, confirming a framework monorepo.",
+      "source": {"path": "tsconfig.json", "line_start": 19, "line_end": 43, "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e"}
+    },
+    {
+      "order": 3,
+      "action": "reject",
+      "target": ".",
+      "reason": "A root package manifest alone must not be promoted to a Kubernetes workload without a production execution path.",
+      "result": "Root workload candidate rejected; search runnable subprojects or samples instead.",
+      "source": {"path": "package.json", "line_start": 18, "line_end": 53, "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e"}
+    },
+    {
+      "order": 4,
+      "action": "read",
+      "target": "sample/01-cats-app/package.json",
+      "reason": "Validate whether a child package exposes a production start command.",
+      "result": "Child package provides build, development start and production start scripts; start:prod resolves to node dist/main.",
+      "source": {"path": "sample/01-cats-app/package.json", "line_start": 8, "line_end": 21, "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e"}
+    },
+    {
+      "order": 5,
+      "action": "follow",
+      "target": "sample/01-cats-app/src/main.ts",
+      "reason": "Map the compiled production entrypoint dist/main back to source and verify listener behavior.",
+      "result": "NestFactory creates AppModule and listens on TCP port 3000.",
+      "source": {"path": "sample/01-cats-app/src/main.ts", "line_start": 3, "line_end": 14, "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e"}
+    },
+    {
+      "order": 6,
+      "action": "stop",
+      "target": "sample/01-cats-app",
+      "reason": "Runtime, build, production entrypoint and port are confirmed for the sample workload. Configuration, storage and external dependencies are not established by the inspected files.",
+      "result": "Stop with explicit unknown fields rather than broad-reading the framework repository."
+    }
+  ],
+  "file_decisions": [
+    {
+      "path": "package.json",
+      "decision": "required",
+      "roles": ["repository-classification", "build", "workspace"],
+      "reasons": ["Distinguishes framework workspace from deployable application", "Root scripts have no production start path"],
+      "line_ranges": [{"start": 18, "end": 53}]
+    },
+    {
+      "path": "tsconfig.json",
+      "decision": "supporting",
+      "roles": ["workspace", "build-output", "module-map"],
+      "reasons": ["Confirms packages and integration compilation scope", "Maps package aliases and dist output"],
+      "line_ranges": [{"start": 19, "end": 43}]
+    },
+    {
+      "path": "sample/01-cats-app/package.json",
+      "decision": "required",
+      "roles": ["runtime", "build", "entrypoint"],
+      "reasons": ["Defines start:prod", "Maps production execution to dist/main"],
+      "line_ranges": [{"start": 8, "end": 21}]
+    },
+    {
+      "path": "sample/01-cats-app/src/main.ts",
+      "decision": "required",
+      "roles": ["runtime", "listener", "source-entrypoint"],
+      "reasons": ["Creates the Nest application", "Confirms listen port 3000"],
+      "line_ranges": [{"start": 3, "end": 14}]
+    },
+    {
+      "path": "integration/docker-compose.yml",
+      "decision": "rejected",
+      "roles": ["test-infrastructure"],
+      "reasons": ["Root script explicitly names it under test:docker workflows", "Must not be promoted to production deployment evidence without another production reference"]
+    }
+  ],
+  "relationship_edges": [
+    {
+      "from": "package.json#scripts.build",
+      "relation": "compiles",
+      "to": "packages/**",
+      "status": "resolved",
+      "source": {"path": "package.json", "line_start": 18, "line_end": 28, "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e"}
+    },
+    {
+      "from": "sample/01-cats-app/package.json#scripts.start:prod",
+      "relation": "executes",
+      "to": "sample/01-cats-app/dist/main",
+      "status": "resolved",
+      "source": {"path": "sample/01-cats-app/package.json", "line_start": 12, "line_end": 16, "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e"}
+    },
+    {
+      "from": "sample/01-cats-app/dist/main",
+      "relation": "source-maps-to",
+      "to": "sample/01-cats-app/src/main.ts",
+      "status": "resolved",
+      "source": {"path": "sample/01-cats-app/package.json", "line_start": 9, "line_end": 16, "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e"}
+    },
+    {
+      "from": "sample/01-cats-app/src/main.ts",
+      "relation": "boots",
+      "to": "AppModule",
+      "status": "resolved",
+      "source": {"path": "sample/01-cats-app/src/main.ts", "line_start": 3, "line_end": 9, "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e"}
+    }
+  ],
+  "design_findings": [
+    {
+      "field": "workload",
+      "value": "The repository root is a framework workspace; sample/01-cats-app is a runnable sample workload, not evidence that the repository root itself should be deployed.",
+      "status": "confirmed",
+      "evidence": [
+        {"path": "package.json", "line_start": 18, "line_end": 53, "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e"},
+        {"path": "sample/01-cats-app/package.json", "line_start": 8, "line_end": 21, "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e"}
+      ]
+    },
+    {
+      "field": "runtime",
+      "value": "Node.js >=20 with NestJS and the Express platform adapter for the inspected sample.",
+      "status": "confirmed",
+      "evidence": [
+        {"path": "package.json", "line_start": 176, "line_end": 178, "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e"},
+        {"path": "sample/01-cats-app/package.json", "line_start": 23, "line_end": 31, "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e"}
+      ]
+    },
+    {
+      "field": "build",
+      "value": "nest build produces dist output; the sample removes dist before build.",
+      "status": "confirmed",
+      "evidence": [{"path": "sample/01-cats-app/package.json", "line_start": 8, "line_end": 16, "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e"}]
+    },
+    {
+      "field": "entrypoint",
+      "value": "node dist/main, sourced from src/main.ts",
+      "status": "confirmed",
+      "evidence": [
+        {"path": "sample/01-cats-app/package.json", "line_start": 12, "line_end": 16, "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e"},
+        {"path": "sample/01-cats-app/src/main.ts", "line_start": 3, "line_end": 14, "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e"}
+      ]
+    },
+    {
+      "field": "port",
+      "value": 3000,
+      "status": "confirmed",
+      "evidence": [{"path": "sample/01-cats-app/src/main.ts", "line_start": 7, "line_end": 12, "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e"}]
+    },
+    {
+      "field": "configuration",
+      "value": "No runtime configuration reads established in the inspected files.",
+      "status": "unknown",
+      "evidence": []
+    },
+    {
+      "field": "storage",
+      "value": "No persistent writable path established in the inspected files.",
+      "status": "unknown",
+      "evidence": []
+    },
+    {
+      "field": "external_dependency",
+      "value": "No external runtime service established for sample/01-cats-app from the inspected files.",
+      "status": "unknown",
+      "evidence": []
+    },
+    {
+      "field": "deployment",
+      "value": "No production container or Kubernetes deployment definition established for sample/01-cats-app.",
+      "status": "unknown",
+      "evidence": []
+    }
+  ],
+  "scanner_misses": [
+    {
+      "type": "root-manifest-false-positive-risk",
+      "description": "A scanner that treats every root package.json as a workload would misclassify a framework publishing workspace as a deployable application.",
+      "needed_signal": "Require an executable production path or child workload boundary before confirming a workload."
+    },
+    {
+      "type": "sample-boundary-risk",
+      "description": "Runnable samples contain valid listeners and start commands but must remain classified as samples unless the requested analysis scope explicitly targets them.",
+      "needed_signal": "Carry path semantics such as sample, example, demo and integration into workload confidence."
+    },
+    {
+      "type": "test-compose-false-positive-risk",
+      "description": "integration/docker-compose.yml is referenced by test:docker scripts and should not count as production deployment evidence.",
+      "needed_signal": "Propagate the referencing script role into the referenced file classification."
+    }
+  ],
+  "rule_candidates": [
+    {
+      "scope": "language",
+      "kind": "seed",
+      "condition": {"language": "node", "file": "package.json"},
+      "action": {"inspect": ["scripts", "workspaces", "engines"], "classify_before_workload_confirmation": true},
+      "support": "Root package scripts reveal whether the repository is an application, library, framework workspace or test harness.",
+      "counterexample": "A package may omit start scripts and still be invoked by Dockerfile or Procfile; apply fallback edges before rejection."
+    },
+    {
+      "scope": "universal",
+      "kind": "stop",
+      "condition": {"root_has_manifest": true, "production_execution_path": false, "child_workloads_possible": true},
+      "action": {"reject_root_workload": true, "search_child_boundaries": ["apps", "services", "sample", "samples", "examples", "cmd"]},
+      "support": "nestjs/nest root is a build and publishing workspace while a child sample has a production start path.",
+      "counterexample": "Repositories started exclusively by external platform configuration need Procfile, container or deployment fallback inspection."
+    },
+    {
+      "scope": "repository_shape",
+      "kind": "exclude",
+      "condition": {"path_segment_in": ["sample", "samples", "example", "examples", "demo"], "analysis_scope_is_root": true},
+      "action": {"workload_confidence": "low", "require_explicit_scope_or_production_reference": true},
+      "support": "Nest samples are runnable but are not the framework repository's deployable production workload.",
+      "counterexample": "A repository may intentionally consist only of a deployable example or starter; root documentation and release artifacts can raise confidence."
+    },
+    {
+      "scope": "universal",
+      "kind": "follow",
+      "condition": {"script_role": "production-start", "command_matches": "node dist/<entry>"},
+      "action": {"follow_to": ["source-map", "tsconfig.outDir", "src/<entry>.ts"]},
+      "support": "sample/01-cats-app start:prod points to dist/main and src/main.ts confirms the listener.",
+      "counterexample": "Bundlers can rename or combine entrypoints; inspect build configuration when the source mapping is not direct."
+    }
+  ],
+  "stop_decision": {
+    "stopped": true,
+    "reason": "The first navigation-policy slice established repository classification, a child runnable sample, build, entrypoint and port. Broad reading was stopped because the root is a framework corpus and remaining design fields are not required to validate the initial navigation rules.",
+    "known_fields": ["workload-boundary", "runtime", "build", "entrypoint", "port"],
+    "unknown_fields": ["configuration", "storage", "internal_dependency", "external_dependency", "deployment"]
+  },
+  "review": {
+    "status": "draft",
+    "reviewer": "OpenAI",
+    "reviewed_at": "2026-07-27T19:16:06+09:00",
+    "notes": "Initial corpus observation based on pinned source files. Full repository inventory and independent second review remain pending."
+  }
+}
