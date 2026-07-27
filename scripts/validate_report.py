@@ -41,6 +41,18 @@ NEW_DETAILED_SECTIONS = [
     "## 7. 제외 항목과 설계 차단 항목 상세",
     "## 8. Kubernetes 설계 입력 상태",
 ]
+SECTION_CONTRACTS = {
+    ("legacy", "summary"): SUMMARY_SECTIONS,
+    ("legacy", "detailed"): DETAILED_SECTIONS,
+    ("new", "summary"): NEW_SUMMARY_SECTIONS,
+    ("new", "detailed"): NEW_DETAILED_SECTIONS,
+}
+CONTRACT_LABELS = {
+    ("legacy", "summary"): "LEGACY_SUMMARY",
+    ("legacy", "detailed"): "LEGACY_DETAILED",
+    ("new", "summary"): "NEW_SUMMARY",
+    ("new", "detailed"): "NEW_DETAILED",
+}
 
 FIXTURES = {
     "no-dockerfile-monorepo": [
@@ -61,6 +73,8 @@ WORKLOAD_HEADING = re.compile(r"^### 배포 대상:\s*\S+", re.MULTILINE)
 PROPERTY_LINE = re.compile(
     r"^- [^:\n]+:.+ — 상태: (확인됨|추정됨|미확인|상충됨) / 근거: (.+)$"
 )
+SECTION_FENCE = re.compile(r"^\s*(```|~~~)")
+SECTION_HEADING = re.compile(r"^##\s*(?:(?P<number>\d+)\.\s*)?(?P<name>.+?)\s*$")
 
 
 def detect_mode(text: str) -> str | None:
@@ -69,6 +83,93 @@ def detect_mode(text: str) -> str | None:
     if text.lstrip().startswith(("# Kubernetes 이관 상세 평가", "# Kubernetes 설계 입력 상세 평가")):
         return "detailed"
     return None
+
+
+def markdown_h2_sections(text: str) -> list[tuple[str | None, str]]:
+    sections: list[tuple[str | None, str]] = []
+    in_fence = False
+    fence_marker: str | None = None
+    for line in text.splitlines():
+        fence = SECTION_FENCE.match(line)
+        if fence:
+            marker = fence.group(1)
+            if not in_fence:
+                in_fence = True
+                fence_marker = marker[:3]
+            elif marker.startswith(fence_marker or ""):
+                in_fence = False
+                fence_marker = None
+            continue
+        if in_fence:
+            continue
+        match = SECTION_HEADING.match(line)
+        if match:
+            sections.append((match.group("number"), match.group("name").strip()))
+    return sections
+
+
+def section_name(section: str) -> str:
+    match = SECTION_HEADING.match(section)
+    if not match:
+        return section.removeprefix("##").strip()
+    return match.group("name").strip()
+
+
+def section_number(section: str) -> str | None:
+    match = SECTION_HEADING.match(section)
+    return match.group("number") if match else None
+
+
+def matching_section(
+    headings: list[tuple[str | None, str]],
+    section: str,
+) -> tuple[str | None, str] | None:
+    expected = section_name(section)
+    return next((heading for heading in headings if heading[1] == expected), None)
+
+
+def detect_contract(
+    headings: list[tuple[str | None, str]],
+    mode: str | None,
+    requested_contract: str,
+) -> tuple[str | None, str]:
+    if requested_contract == "legacy":
+        return "legacy", "명시: --contract legacy"
+    if requested_contract == "new":
+        return "new", "명시: --contract new"
+    if mode not in {"summary", "detailed"}:
+        return None, "mode 미감지"
+
+    sections = SECTION_CONTRACTS[("new", mode)]
+    matched = [section for section in sections if matching_section(headings, section)]
+    if matched:
+        first = section_name(matched[0])
+        return "new", f"섹션명 매칭: {first} ({len(matched)}/{len(sections)})"
+    return None, "신 계약 섹션명 없음"
+
+
+def missing_section_errors(
+    headings: list[tuple[str | None, str]],
+    required_sections: list[str],
+) -> list[str]:
+    errors: list[str] = []
+    for section in required_sections:
+        if matching_section(headings, section) is None:
+            errors.append(f"섹션이 없습니다: {section}")
+    return errors
+
+
+def section_number_warnings(
+    headings: list[tuple[str | None, str]],
+    required_sections: list[str],
+) -> list[str]:
+    warnings: list[str] = []
+    for section in required_sections:
+        expected_number = section_number(section)
+        match = matching_section(headings, section)
+        if match is not None and expected_number is not None and match[0] != expected_number:
+            warnings.append(f"섹션 번호 접두사가 없습니다: {section}")
+    return warnings
 
 
 def has_valid_evidence(value: str) -> bool:
@@ -160,14 +261,13 @@ def component_cards(text: str) -> list[tuple[str, str]]:
     return cards
 
 
-def component_briefing_errors(text: str) -> list[str]:
+def component_briefing_errors(text: str, contract: str) -> list[str]:
     """구성 요소마다 분류된 key:value 속성과 속성별 근거를 요구한다."""
     errors: list[str] = []
     cards = component_cards(text)
     if not cards:
         return ["구성 요소별 배포 브리핑에 구성 요소 카드가 없습니다"]
 
-    new_contract = "## 3. 배포 대상별 실행 정보" in text
     categories = [
         "#### 역할과 실행",
         "#### 빌드와 기동",
@@ -186,7 +286,7 @@ def component_briefing_errors(text: str) -> list[str]:
         "workload.kind:", "metadata.name:", "image:", "command:", "args:",
         "containerPort:", "Service:", "Ingress:",
     ]
-    if new_contract:
+    if contract == "new":
         categories = [
             "#### 실행 정보", "#### 설정과 상태", "#### Kubernetes 최소 설계 입력", "#### 최소 입력 누락",
         ]
@@ -233,14 +333,13 @@ def disallowed_section_errors(text: str) -> list[str]:
     return errors
 
 
-def dependency_and_readiness_errors(text: str) -> list[str]:
+def dependency_and_readiness_errors(text: str, contract: str) -> list[str]:
     errors: list[str] = []
-    new_contract = "## 3. 배포 대상별 실행 정보" in text
-    dependency_fields = ["기능 실행에 필요", "공급 또는 관리 경계"] if new_contract else ["애플리케이션 필수 여부", "선택한 배포 구성에서 필요"]
+    dependency_fields = ["기능 실행에 필요", "공급 또는 관리 경계"] if contract == "new" else ["애플리케이션 필수 여부", "선택한 배포 구성에서 필요"]
     for field in dependency_fields:
         if field not in text:
             errors.append(f"의존성 필요 여부 필드가 없습니다: {field}")
-    headings = ["### 설계 차단 항목"] if new_contract else ["### Readiness 차단 요인", "### 일반 운영 권장사항"]
+    headings = ["### 설계 차단 항목"] if contract == "new" else ["### Readiness 차단 요인", "### 일반 운영 권장사항"]
     for heading in headings:
         if heading not in text:
             errors.append(f"최종 판정에 필수 구분이 없습니다: {heading[4:]}")
@@ -256,9 +355,8 @@ def mode_specific_errors(text: str, mode: str | None) -> list[str]:
     return errors
 
 
-def overview_errors(text: str) -> list[str]:
+def overview_errors(text: str, contract: str) -> list[str]:
     errors: list[str] = []
-    new_contract = "## 3. 배포 대상별 실행 정보" in text
     required = [
         "배포 가능한 구성 요소:",
         "기본 배포 구성:",
@@ -267,7 +365,7 @@ def overview_errors(text: str) -> list[str]:
         "확인된 수신 포트:",
         "적용을 막는 최소 입력 누락:",
     ]
-    if new_contract:
+    if contract == "new":
         return []
     overview = text.split("## 3. 구성 요소별 배포 브리핑", 1)[0]
     for field in required:
@@ -280,6 +378,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="생성된 Kubernetes 이관 보고서를 검증합니다.")
     parser.add_argument("report", help="생성된 Markdown 보고서")
     parser.add_argument("--mode", choices=["auto", "summary", "detailed"], default="auto")
+    parser.add_argument("--contract", choices=["auto", "new", "legacy"], default="auto")
     parser.add_argument("--fixture", choices=sorted(FIXTURES), help="fixture별 검사를 적용합니다")
     parser.add_argument(
         "--repo-root",
@@ -294,7 +393,9 @@ def main() -> int:
         return 1
 
     text = path.read_text(encoding="utf-8")
+    headings = markdown_h2_sections(text)
     errors: list[str] = []
+    warnings: list[str] = []
     if args.repo_root is not None and not args.repo_root.is_dir():
         errors.append(f"저장소 루트를 찾을 수 없습니다: {args.repo_root}")
     detected = detect_mode(text)
@@ -304,15 +405,20 @@ def main() -> int:
     elif detected is not None and args.mode != "auto" and detected != args.mode:
         errors.append(f"보고서 제목은 {detected} 모드를 가리키지만 요청 모드는 {args.mode}입니다")
 
-    new_contract = "## 3. 배포 대상별 실행 정보" in text
-    required_sections = (
-        NEW_SUMMARY_SECTIONS if new_contract and mode == "summary"
-        else NEW_DETAILED_SECTIONS if new_contract and mode == "detailed"
-        else SUMMARY_SECTIONS if mode == "summary" else DETAILED_SECTIONS
-    )
-    for section in required_sections:
-        if section not in text:
-            errors.append(f"섹션이 없습니다: {section}")
+    contract, detection = detect_contract(headings, mode, args.contract)
+    if contract is None:
+        errors.append(
+            "보고서 계약을 감지할 수 없습니다: 신 계약 섹션명을 찾지 못했습니다. "
+            "레거시 계약 검증은 --contract legacy로 명시해야 합니다."
+        )
+        required_sections = []
+    elif mode not in {"summary", "detailed"}:
+        required_sections = []
+    else:
+        required_sections = SECTION_CONTRACTS[(contract, mode)]
+        errors.extend(missing_section_errors(headings, required_sections))
+        if contract == "new":
+            warnings.extend(section_number_warnings(headings, required_sections))
     verdicts = re.findall(r"(?m)^- 판정: (설계 입력 충분|준비됨|추가 정보 필요|분석 불가|진행 불가)$", text)
     if not verdicts:
         errors.append("명시적인 최종 판정이 없습니다")
@@ -322,10 +428,11 @@ def main() -> int:
         errors.append("file:line 또는 검색(...) 근거를 찾을 수 없습니다")
 
     errors.extend(evidence_table_errors(text))
-    errors.extend(component_briefing_errors(text))
-    errors.extend(overview_errors(text))
+    if contract is not None:
+        errors.extend(component_briefing_errors(text, contract))
+        errors.extend(overview_errors(text, contract))
+        errors.extend(dependency_and_readiness_errors(text, contract))
     errors.extend(disallowed_section_errors(text))
-    errors.extend(dependency_and_readiness_errors(text))
     errors.extend(mode_specific_errors(text, mode))
     errors.extend(
         repository_reference_errors(
@@ -333,18 +440,27 @@ def main() -> int:
             args.repo_root if args.repo_root is not None and args.repo_root.is_dir() else None,
         )
     )
-    for field in ([] if new_contract else ["실행 위치", "적용 시점"]):
-        if field not in text:
-            errors.append(f"필수 필드가 없습니다: {field}")
+    if contract == "legacy":
+        for field in ["실행 위치", "적용 시점"]:
+            if field not in text:
+                errors.append(f"필수 필드가 없습니다: {field}")
     if args.fixture:
         for term in FIXTURES[args.fixture]:
             if term not in text:
                 errors.append(f"fixture 기대값을 찾을 수 없습니다: {term}")
 
     if errors:
+        if contract is not None and mode in {"summary", "detailed"}:
+            print(f"계약: {CONTRACT_LABELS[(contract, mode)]} (감지: {detection})")
+        for warning in warnings:
+            print(f"경고: {warning}")
         for error in errors:
             print(f"실패: {error}")
         return 1
+    if contract is not None and mode in {"summary", "detailed"}:
+        print(f"계약: {CONTRACT_LABELS[(contract, mode)]} (감지: {detection})")
+    for warning in warnings:
+        print(f"경고: {warning}")
     print(f"성공: 보고서에 필요한 {mode} 브리핑 구조가 포함되어 있습니다.")
     return 0
 

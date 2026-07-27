@@ -24,4 +24,4 @@ jobs:
       - name: Validate package
         run: python3 scripts/validate_skill.py .
       - name: Run core tests
-        run: python3 -m unittest tests.test_black_box_eval tests.test_codex_target_gate_hook tests.test_package tests.test_repository_evidence tests.test_trigger_precision_eval -v
+        run: python3 -m unittest tests.test_black_box_eval tests.test_codex_target_gate_hook tests.test_package tests.test_repository_evidence tests.test_runtime_bottlenecks tests.test_trigger_precision_eval -v

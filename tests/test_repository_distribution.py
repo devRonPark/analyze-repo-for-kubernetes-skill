@@ -19,6 +19,9 @@ class RepositoryDistributionTests(unittest.TestCase):
             "scripts/update-qwen.sh",
             "scripts/uninstall-codex.sh",
             "scripts/codex_target_gate_hook.py",
+            "scripts/compact_repository_evidence.py",
+            "scripts/prepare_analysis_target.py",
+            "scripts/run_codex_benchmark.py",
             "hooks.json",
         ]:
             self.assertTrue((ROOT / rel).is_file(), rel)
@@ -77,6 +80,20 @@ class RepositoryDistributionTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_runtime_bottleneck_helpers_are_syntax_valid(self):
+        for rel in [
+            "scripts/compact_repository_evidence.py",
+            "scripts/prepare_analysis_target.py",
+            "scripts/run_codex_benchmark.py",
+        ]:
+            result = subprocess.run(
+                ["python3", "-m", "py_compile", str(ROOT / rel)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_install_script_creates_qwen_skill_symlink(self):
         with tempfile.TemporaryDirectory() as tmp:
