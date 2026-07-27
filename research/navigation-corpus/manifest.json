@@ -3,7 +3,7 @@
   "selection_policy": "diverse-runtime-shapes",
   "repositories": [
     {"id":"node-express","language":"node","repository":"expressjs/express","url":"https://github.com/expressjs/express","category":"http-framework","shape":"single-package","revision_status":"unpinned"},
-    {"id":"node-nest","language":"node","repository":"nestjs/nest","url":"https://github.com/nestjs/nest","category":"application-framework","shape":"monorepo","revision_status":"unpinned"},
+    {"id":"node-nest","language":"node","repository":"nestjs/nest","url":"https://github.com/nestjs/nest","category":"application-framework","shape":"monorepo","revision_status":"pinned","revision":"68ba871118c1ea2b4951f05ccc57950d10c7906e","observation":"research/navigation-corpus/observations/node/node-nest.json"},
     {"id":"node-fastify","language":"node","repository":"fastify/fastify","url":"https://github.com/fastify/fastify","category":"http-framework","shape":"single-package","revision_status":"unpinned"},
     {"id":"node-strapi","language":"node","repository":"strapi/strapi","url":"https://github.com/strapi/strapi","category":"api-platform","shape":"monorepo","revision_status":"unpinned"},
     {"id":"node-node-red","language":"node","repository":"node-red/node-red","url":"https://github.com/node-red/node-red","category":"workflow-runtime","shape":"monorepo","revision_status":"unpinned"},
