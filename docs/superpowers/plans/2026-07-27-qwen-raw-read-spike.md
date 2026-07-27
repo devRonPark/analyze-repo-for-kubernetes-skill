@@ -696,11 +696,15 @@ for p in r['read_files']:
 
 - [ ] **Step 4: 보고서에 미해결 항목이 없는지 확인**
 
+저장소의 기존 validator를 쓴다. `scripts/validate_skill.py:108`이 이미 placeholder 패턴을 검사하므로 패턴을 여기서 다시 쓰지 않는다. 패턴 문자열을 문서에 그대로 적으면 그 문서 자체가 검사에 걸린다.
+
 ```bash
-grep -nE 'TBD|TODO|XXX|\?\?\?' validation/qwen-raw-read-spike-2026-07-27.md && echo "FAIL: placeholder found" || echo "OK: no placeholder"
+python3 "$SKILL_ROOT/scripts/validate_skill.py" "$SKILL_ROOT"
 ```
 
-Expected: `OK: no placeholder`.
+Expected: 종료 코드 `0`.
+
+`hooks.json` 관련 실패가 나오면 그것은 이 spike와 무관한 작업 트리의 기존 상태이므로 Step 5로 진행한다. 보고서 파일 이름이 언급된 placeholder 실패만 이 task의 책임이다.
 
 - [ ] **Step 5: 보고서 파일 하나만 커밋**
 
