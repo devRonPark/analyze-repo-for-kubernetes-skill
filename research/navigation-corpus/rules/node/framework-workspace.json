@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "rule_set": "node-framework-workspace-navigation",
+  "status": "candidate",
+  "derived_from": [
+    {
+      "corpus_id": "node-nest",
+      "revision": "68ba871118c1ea2b4951f05ccc57950d10c7906e"
+    }
+  ],
+  "rules": [
+    {
+      "id": "node-root-manifest-classification-before-workload",
+      "kind": "seed",
+      "priority": 100,
+      "when": {
+        "language": "node",
+        "path": "package.json"
+      },
+      "inspect": ["scripts", "workspaces", "engines", "name", "private"],
+      "decision": "classify repository role before confirming a workload",
+      "reason": "A package manifest may describe a library, framework publishing workspace, test harness or deployable application."
+    },
+    {
+      "id": "node-production-execution-path-required",
+      "kind": "workload-gate",
+      "priority": 95,
+      "when": {
+        "root_manifest_present": true
+      },
+      "confirm_workload_if_any": [
+        "production start script",
+        "Dockerfile or Containerfile command",
+        "Procfile process",
+        "platform process declaration",
+        "deployment container command"
+      ],
+      "otherwise": {
+        "root_workload": "unconfirmed",
+        "next": "search child workload boundaries"
+      }
+    },
+    {
+      "id": "node-child-boundary-search",
+      "kind": "fallback",
+      "priority": 90,
+      "when": {
+        "root_workload": "unconfirmed",
+        "repository_shape": ["monorepo", "framework-workspace", "library-workspace"]
+      },
+      "search_paths": ["apps/*", "services/*", "packages/*", "sample/*", "samples/*", "examples/*"],
+      "require_per_child": ["manifest", "production execution path", "runtime entrypoint"],
+      "reason": "Runnable children can exist even when the repository root is not deployable."
+    },
+    {
+      "id": "node-sample-confidence-penalty",
+      "kind": "confidence",
+      "priority": 85,
+      "when": {
+        "path_segment": ["sample", "samples", "example", "examples", "demo"]
+      },
+      "set": {
+        "workload_confidence": "low",
+        "production_representativeness": "unconfirmed"
+      },
+      "raise_confidence_if_any": [
+        "explicit analysis scope targets child",
+        "release artifact references child",
+        "production deployment references child",
+        "repository is explicitly a starter or example application"
+      ]
+    },
+    {
+      "id": "node-script-to-source-entrypoint",
+      "kind": "follow",
+      "priority": 80,
+      "when": {
+        "production_command_pattern": "node dist/<entry>"
+      },
+      "follow": [
+        "tsconfig compilerOptions.outDir",
+        "source map or build configuration",
+        "src/<entry>.ts"
+      ],
+      "verify": ["framework bootstrap", "listener", "background worker registration", "process lifetime"]
+    },
+    {
+      "id": "referenced-test-compose-remains-test",
+      "kind": "exclude",
+      "priority": 80,
+      "when": {
+        "referencing_script_role": "test",
+        "referenced_file_type": "compose"
+      },
+      "set": {
+        "deployment_evidence": false,
+        "role": "test-infrastructure"
+      },
+      "override_if": "the same file is independently referenced by a production deployment path"
+    }
+  ]
+}
