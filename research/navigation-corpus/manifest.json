@@ -10,7 +10,7 @@
     {"id":"node-medusa","language":"node","repository":"medusajs/medusa","url":"https://github.com/medusajs/medusa","category":"commerce-platform","shape":"monorepo","revision_status":"unpinned"},
     {"id":"node-directus","language":"node","repository":"directus/directus","url":"https://github.com/directus/directus","category":"data-platform","shape":"monorepo","revision_status":"unpinned"},
     {"id":"node-calcom","language":"node","repository":"calcom/cal.com","url":"https://github.com/calcom/cal.com","category":"full-stack-application","shape":"monorepo","revision_status":"unpinned"},
-    {"id":"node-n8n","language":"node","repository":"n8n-io/n8n","url":"https://github.com/n8n-io/n8n","category":"worker-workflow-platform","shape":"monorepo","revision_status":"unpinned"},
+    {"id":"node-n8n","language":"node","repository":"n8n-io/n8n","url":"https://github.com/n8n-io/n8n","category":"worker-workflow-platform","shape":"monorepo","revision_status":"pinned","revision":"5a78ba7c29c73751f2241e7095d180f26c3436f9","observation":"research/navigation-corpus/observations/node/node-n8n.json"},
     {"id":"node-nextjs","language":"node","repository":"vercel/next.js","url":"https://github.com/vercel/next.js","category":"web-runtime-framework","shape":"monorepo","revision_status":"unpinned"},
 
     {"id":"java-petclinic","language":"java","repository":"spring-projects/spring-petclinic","url":"https://github.com/spring-projects/spring-petclinic","category":"spring-web-application","shape":"single-module","revision_status":"unpinned"},
