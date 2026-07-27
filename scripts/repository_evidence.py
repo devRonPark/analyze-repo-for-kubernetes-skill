@@ -15,6 +15,7 @@ import tempfile
 from typing import Any, Callable
 
 from repository_inventory import build_inventory, format_diagnostics, included_file_records
+from runtime_signal_extractors import runtime_extractor_for
 
 
 EVIDENCE_SCHEMA_VERSION = "repository-evidence/v2"
@@ -223,6 +224,7 @@ class FileRecord:
     line_count: int
     content_sha256: str
     mtime_ns: int
+    language: str | None
 
 
 @dataclass(frozen=True)
@@ -298,7 +300,12 @@ def evidence_record_from_dict(value: Any) -> EvidenceRecord:
         or (value["kind"] != "absence" and source is None)
     ):
         raise ValueError("cached evidence has inconsistent absence fields")
-    if extractor != {"name": EXTRACTOR_NAME, "version": EXTRACTOR_VERSION}:
+    if (
+        not isinstance(extractor, dict)
+        or not isinstance(extractor.get("name"), str)
+        or not isinstance(extractor.get("version"), str)
+        or not re.fullmatch(r"\d+\.\d+\.\d+", extractor["version"])
+    ):
         raise ValueError("cached evidence extractor is invalid")
     record = EvidenceRecord(
         id=value["id"],
@@ -331,11 +338,13 @@ class EvidenceCache:
         snapshot: RepositorySnapshot,
         rule_fingerprint: str,
         diagnostics: CacheDiagnostics,
+        runtime_signals_enabled: bool = True,
     ) -> None:
         self.cache_directory = cache_directory
         self.snapshot = snapshot
         self.rule_fingerprint = rule_fingerprint
         self.diagnostics = diagnostics
+        self.runtime_signals_enabled = runtime_signals_enabled
         repository_identity = str(Path(snapshot.repository_root).resolve())
         self.namespace = canonical_sha256(
             {
@@ -349,6 +358,7 @@ class EvidenceCache:
         return self.cache_directory is not None
 
     def _cache_identity(self, file_record: FileRecord) -> dict[str, str]:
+        runtime_extractor = runtime_extractor_for(file_record.language) if self.runtime_signals_enabled else None
         return {
             "analysis_root": self.snapshot.subdirectory,
             "content_sha256": file_record.content_sha256,
@@ -358,6 +368,10 @@ class EvidenceCache:
             "path": file_record.path,
             "repository_identity": str(Path(self.snapshot.repository_root).resolve()),
             "rule_fingerprint": self.rule_fingerprint,
+            "runtime_signals_enabled": str(self.runtime_signals_enabled).lower(),
+            "runtime_extractor": (
+                f"{runtime_extractor.name}@{runtime_extractor.version}" if runtime_extractor is not None else "none"
+            ),
         }
 
     def _entry_path(self, cache_key: str) -> Path:
@@ -559,6 +573,7 @@ def walk_text_files(repository_root: Path, analysis_root: Path) -> list[FileReco
                     line_count=line_count,
                     content_sha256=content_sha256,
                     mtime_ns=mtime_ns,
+                    language=entry.get("language") if isinstance(entry.get("language"), str) else None,
                 )
             )
     return records
@@ -647,6 +662,7 @@ def build_evidence_record(
     source: dict[str, int | str] | None = None,
     absence: dict[str, str] | None = None,
     provenance: str = "INFERRED",
+    extractor: dict[str, str] | None = None,
 ) -> EvidenceRecord:
     if kind == "absence" and absence is None:
         absence = {
@@ -665,6 +681,7 @@ def build_evidence_record(
         data=data,
         source=source,
         absence=absence,
+        extractor=extractor or {"name": EXTRACTOR_NAME, "version": EXTRACTOR_VERSION},
     )
 
 
@@ -1032,7 +1049,11 @@ def collect_package_manager_conflicts(records: list[EvidenceRecord]) -> list[Evi
     return conflicts
 
 
-def collect_file_evidence(repository_root: Path, file_record: FileRecord) -> list[EvidenceRecord]:
+def collect_file_evidence(
+    repository_root: Path,
+    file_record: FileRecord,
+    runtime_signals_enabled: bool = True,
+) -> list[EvidenceRecord]:
     path = file_record.path
     source = repository_root / path
     name = Path(path).name
@@ -1088,10 +1109,28 @@ def collect_file_evidence(repository_root: Path, file_record: FileRecord) -> lis
                 positive_evidence(path, index),
                 {"path": path},
             )
+    runtime_extractor = runtime_extractor_for(file_record.language) if runtime_signals_enabled else None
+    if runtime_extractor is not None:
+        outcome = runtime_extractor.extract(path, lines)
+        descriptor = {"name": runtime_extractor.name, "version": runtime_extractor.version}
+        for signal in outcome.signals:
+            records.append(
+                build_evidence_record(
+                    signal.kind,
+                    positive_evidence(path, signal.line),
+                    signal.data,
+                    provenance="EXTRACTED",
+                    extractor=descriptor,
+                )
+            )
     return dedupe_and_sort_evidence(records)
 
 
-def collect_universal_evidence(snapshot: RepositorySnapshot, cache: EvidenceCache) -> list[EvidenceRecord]:
+def collect_universal_evidence(
+    snapshot: RepositorySnapshot,
+    cache: EvidenceCache,
+    runtime_signals_enabled: bool = True,
+) -> list[EvidenceRecord]:
     repository_root = Path(snapshot.repository_root)
     records: list[EvidenceRecord] = []
     seen_container_definition = False
@@ -1099,7 +1138,7 @@ def collect_universal_evidence(snapshot: RepositorySnapshot, cache: EvidenceCach
     for file_record in snapshot.files:
         cached_records = cache.get(file_record)
         if cached_records is None:
-            cached_records = collect_file_evidence(repository_root, file_record)
+            cached_records = collect_file_evidence(repository_root, file_record, runtime_signals_enabled)
             cache.put(file_record, cached_records)
         records.extend(cached_records)
         name = Path(file_record.path).name
@@ -1125,11 +1164,12 @@ def scan_repository(
     cache_directory: Path | None = DEFAULT_CACHE_DIRECTORY,
     rule_fingerprint: str = RULE_FINGERPRINT,
     cache_diagnostics: CacheDiagnostics | None = None,
+    runtime_signals_enabled: bool = True,
 ) -> dict[str, Any]:
     snapshot = snapshot_repository(target, subdirectory)
     diagnostics = cache_diagnostics or CacheDiagnostics()
-    cache = EvidenceCache(cache_directory, snapshot, rule_fingerprint, diagnostics)
-    evidence = collect_universal_evidence(snapshot, cache)
+    cache = EvidenceCache(cache_directory, snapshot, rule_fingerprint, diagnostics, runtime_signals_enabled)
+    evidence = collect_universal_evidence(snapshot, cache, runtime_signals_enabled)
     return {
         "schema_version": EVIDENCE_SCHEMA_VERSION,
         "snapshot": {
@@ -1163,6 +1203,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Use this disposable local directory for per-file evidence cache entries",
     )
     parser.add_argument("--no-cache", action="store_true", help="Bypass the per-file evidence cache")
+    parser.add_argument("--no-runtime-signals", action="store_true", help="Disable language runtime-signal extraction")
     parser.add_argument(
         "--rule-fingerprint",
         default=RULE_FINGERPRINT,
@@ -1179,6 +1220,7 @@ def main(argv: list[str] | None = None) -> int:
             cache_directory=cache_directory,
             rule_fingerprint=args.rule_fingerprint,
             cache_diagnostics=cache_diagnostics,
+            runtime_signals_enabled=not args.no_runtime_signals,
         )
         inventory_payload = None
         if args.inventory_output or args.diagnostics:

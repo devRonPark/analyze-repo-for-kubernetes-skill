@@ -93,7 +93,14 @@ class RepositoryEvidenceTests(unittest.TestCase):
         ids = [item["id"] for item in payload["evidence"]]
         self.assertEqual(len(ids), len(set(ids)))
         self.assertFalse(any(identifier.startswith("ev-000") for identifier in ids))
-        self.assertEqual({item["provenance"] for item in payload["evidence"]}, {"INFERRED"})
+        self.assertEqual({item["provenance"] for item in payload["evidence"]}, {"EXTRACTED", "INFERRED"})
+        self.assertTrue(
+            all(
+                item["kind"].startswith("runtime_")
+                for item in payload["evidence"]
+                if item["provenance"] == "EXTRACTED"
+            )
+        )
 
         line_counts = {entry["path"]: entry["line_count"] for entry in payload["snapshot"]["files"]}
         positive_items = [item for item in payload["evidence"] if item["kind"] != "absence"]
@@ -105,7 +112,8 @@ class RepositoryEvidenceTests(unittest.TestCase):
             self.assertGreaterEqual(source["end_line"], source["start_line"])
             self.assertLessEqual(source["end_line"], line_counts[source["path"]])
             self.assertEqual(item["evidence"], f"{source['path']}:{source['start_line']}")
-            self.assertEqual(item["extractor"]["name"], "repository_evidence")
+            expected_extractor = "node_runtime_signals" if item["provenance"] == "EXTRACTED" else "repository_evidence"
+            self.assertEqual(item["extractor"]["name"], expected_extractor)
             self.assertRegex(item["extractor"]["version"], r"^\d+\.\d+\.\d+$")
 
         absence = next(item for item in payload["evidence"] if item["kind"] == "absence")
@@ -290,6 +298,76 @@ class RepositoryEvidenceTests(unittest.TestCase):
         self.assertIn("API_TOKEN", rendered)
         self.assertIn("[REDACTED]", rendered)
         self.assertNotIn("do-not-leak-this-token", rendered)
+
+    def test_node_runtime_signals_are_extracted_from_explicit_source_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            source = repo / "src"
+            source.mkdir()
+            (source / "server.js").write_text(
+                "const fs = require('fs')\n"
+                "const { Client } = require('pg')\n"
+                "const db = new Client({ connectionString: process.env.DATABASE_URL })\n"
+                "server.listen(process.env.PORT || 3100, '0.0.0.0')\n"
+                "fs.writeFile(process.env.DATA_PATH, 'value')\n"
+                "setInterval(() => db.query('select 1'), 1000)\n"
+                "// server.listen(9999)\n"
+                "const example = 'fs.writeFile(\"/not-a-path\")'\n",
+                encoding="utf-8",
+            )
+            tests = repo / "tests"
+            tests.mkdir()
+            (tests / "server.test.js").write_text(
+                "server.listen(9876)\nfs.writeFile('/test-output', 'x')\n",
+                encoding="utf-8",
+            )
+            (repo / "README.md").write_text("server.listen(8765)\n", encoding="utf-8")
+            (repo / "package.json").write_text('{"dependencies":{"express":"*"}}\n', encoding="utf-8")
+
+            payload = self.run_collector(repo, "--no-cache")
+
+        expected_kinds = {
+            "runtime_config_read",
+            "runtime_listener",
+            "runtime_outbound_connection",
+            "runtime_writable_path",
+            "runtime_background_registration",
+        }
+        runtime = [item for item in payload["evidence"] if item["kind"] in expected_kinds]
+        self.assertEqual({item["kind"] for item in runtime}, expected_kinds)
+        self.assertTrue(all(item["provenance"] == "EXTRACTED" for item in runtime))
+        self.assertTrue(all(item["status"] == "confirmed" for item in runtime))
+        self.assertTrue(all(item["data"]["language"] == "node" for item in runtime))
+        self.assertTrue(all(item["source"]["path"] == "src/server.js" for item in runtime))
+        listener = next(item for item in runtime if item["kind"] == "runtime_listener")
+        self.assertEqual(listener["data"]["port"], 3100)
+        self.assertEqual(listener["data"]["host"], "0.0.0.0")
+        self.assertFalse(
+            any(item["data"].get("port") in {8765, 9876, 9999} for item in runtime if item["kind"] == "runtime_listener")
+        )
+        writable = next(item for item in runtime if item["kind"] == "runtime_writable_path")
+        self.assertEqual(writable["data"]["path_config_key"], "DATA_PATH")
+        self.assertFalse(
+            any(item["data"].get("path") == "/not-a-path" for item in runtime if item["kind"] == "runtime_writable_path")
+        )
+
+    def test_runtime_signals_can_be_disabled_independently(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            (repo / "server.js").write_text("server.listen(process.env.PORT || 3000)\n", encoding="utf-8")
+
+            enabled = self.run_collector_process(repo, "--no-cache")
+            disabled = self.run_collector_process(repo, "--no-cache", "--no-runtime-signals")
+
+        self.assertEqual(enabled.returncode, 0, enabled.stderr + enabled.stdout)
+        self.assertEqual(disabled.returncode, 0, disabled.stderr + disabled.stdout)
+        enabled_payload = json.loads(enabled.stdout)
+        disabled_payload = json.loads(disabled.stdout)
+        self.assertTrue(any(item["kind"] == "runtime_listener" for item in enabled_payload["evidence"]))
+        self.assertFalse(any(item["kind"].startswith("runtime_") and item["provenance"] == "EXTRACTED" for item in disabled_payload["evidence"]))
+        self.assertTrue(any(item["kind"] == "runtime_entrypoint_hint" for item in disabled_payload["evidence"]))
 
     def test_per_file_cache_reuses_unchanged_evidence_and_matches_a_clean_run(self):
         with tempfile.TemporaryDirectory() as tmp:
