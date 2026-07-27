@@ -21,6 +21,12 @@
 검색(scope=<repository-relative scope>, pattern=<glob 또는 검색식>, result=없음)
 ```
 
+## 파일별 evidence cache
+
+Universal Scanner는 동일한 local checkout의 반복 분석에서 파일별 extraction output만 disposable local cache에 저장해 재사용할 수 있다. cache key에는 정규화된 repository identity, analysis root, repository-relative file path, file content hash, evidence schema version, extractor name/version, rule fingerprint이 들어간다. stat metadata는 cache lookup을 빠르게 하는 힌트일 뿐이며, content hash 확인 없이 재사용하지 않는다.
+
+cache에는 redacted typed evidence와 cache metadata만 저장한다. raw source body, secret value, LLM decision, final report는 저장하지 않는다. write는 atomic replacement로 수행하고, 손상되거나 partial인 entry는 scan을 실패시키지 않고 miss로 처리해 다시 만든다. cached output과 clean output은 evidence JSON의 semantic 및 normalized-byte 동등성을 유지해야 하며, cache 상태는 `--diagnostics`의 stderr count로만 제공한다.
+
 `미확인`에는 확인한 파일 또는 검색 범위와 무엇이 부족한지 쓴다. `상충됨`에는 상충하는 양쪽 근거를 모두 쓴다. 주석보다 실행 가능한 source와 runtime configuration을, 개발 예시보다 production configuration을 우선한다.
 
 범위, 접근 방식, 출력 모드와 최종 판정은 repository fact가 아니다. 임의의 파일 라인을 붙여 `확인됨`으로 만들지 말고 판정을 뒷받침하는 component-level findings를 참조한다.

@@ -158,6 +158,18 @@ python3 scripts/validate_report.py kubernetes-migration-summary.md --mode summar
 python3 scripts/validate_report.py kubernetes-migration-assessment.md --mode detailed --repo-root /path/to/analyzed-repository
 ```
 
+## Evidence cache
+
+`scripts/repository_evidence.py`는 동일한 local checkout을 반복 분석할 때 파일별로 redacted evidence만 재사용하는 disposable local cache를 기본 사용한다. cache key는 정규화된 repository identity와 analysis root, 파일 content hash, evidence schema, extractor version, rule fingerprint을 포함한다. 파일 stat은 탐색 최적화에만 쓰며 content hash가 재사용의 정확성 경계다.
+
+cache는 분석 대상 repository 안에 쓰지 않으며 raw source body, LLM 판단, 최종 report를 저장하지 않는다. cache entry가 손상되거나 부분적으로 기록된 경우 해당 파일은 miss로 처리해 안전하게 다시 수집한다. cache를 사용하지 않아야 하는 실행에는 다음 옵션을 사용한다.
+
+```bash
+python3 scripts/repository_evidence.py /path/to/repository --no-cache --diagnostics
+```
+
+`--cache-dir <path>`로 disposable cache 위치를 지정할 수 있고, `--diagnostics`는 stderr에 `hit`, `miss`, `invalidated`, `corrupted`, `bypassed` 수를 출력한다. evidence JSON 자체에는 cache 상태를 넣지 않으므로 cached run과 clean run을 동일하게 비교할 수 있다.
+
 ## 패키지 검사와 테스트
 
 ```bash
