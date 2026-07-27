@@ -43,7 +43,7 @@ spec의 `미확인 항목` 세 가지는 계획 작성 중에 모두 해소되�
 
 | 항목 | 결과 |
 | --- | --- |
-| 비대화형 실행 | `qwen -p "<prompt>" -o json`. Qwen Code `0.21.0` 확인 |
+| 비대화형 실행 | `qwen -p "<prompt>" -o json`. Qwen Code `0.21.0` 확인. 인증은 `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL` 환경 변수만으로 동작 |
 | token usage 노출 | `-o json` 스트림의 `type: "result"` 이벤트에 `usage.input_tokens`, `usage.output_tokens`, `usage.cache_read_input_tokens`, `usage.total_tokens`, `duration_ms`, `num_turns` 포함 |
 | 읽은 파일 목록 추출 | `-o json` 스트림의 `message.content[]` 안 `type: "tool_use"` 블록에 `read_file`의 `file_path`, `list_directory`의 `path`가 그대로 들어 있음. telemetry나 atime fallback 불필요 |
 
@@ -71,45 +71,42 @@ spec의 `미확인 항목` 세 가지는 계획 작성 중에 모두 해소되�
 
 ---
 
-### Task 1: Qwen 비대화형 인증 확정
+### Task 1: Qwen 비대화형 인증 확정 — 완료됨
 
 **Files:**
-- 없음. 환경 확인 전용 task
+- Create: `$SCRATCH/auth.env`
 
 **Interfaces:**
 - Consumes: 없음
-- Produces: 이후 모든 `qwen` 호출에 붙일 인증 플래그 또는 환경 변수. 이 값을 `$SCRATCH/auth.env`에 기록해 Task 4와 Task 5가 source한다
+- Produces: `$SCRATCH/auth.env`. Task 3, Task 4, Task 5가 source한다
 
-**차단 사항:** 현재 이 환경에는 `~/.qwen/settings.json`도 없고 `OPENAI_*` 계열 환경 변수도 없다. 비대화형 실행은 아래 오류로 즉시 실패한다.
+**상태: 2026-07-27 해결 완료.** 계획 작성 중에 실제로 확인했으므로 재실행할 필요는 없으나, `$SCRATCH`가 사라졌으면 Step 1부터 다시 한다.
 
-```text
-No auth type is selected. Please configure an auth type (e.g. via settings or `--auth-type`) before running in non-interactive mode.
-```
+추론 엔드포인트는 sglang이며, 서빙 모델과 context 한도는 아래와 같다.
 
-기존 벤치 실행은 `QWEN_HOME=/tmp/qwen-skill-bench.kQ6peY/qwen-home`으로 성공했으므로, 그 홈에 인증 설정이 있거나 실행 당시 환경 변수가 설정되어 있었다. **이 task는 사용자에게 인증 방법을 확인받아야 진행할 수 있다.**
+| 항목 | 값 |
+| --- | --- |
+| Endpoint | `http://172.16.4.249:30000/v1` |
+| Auth type | `openai` (환경 변수만으로 충분. `settings.json` 불필요) |
+| Model id | `/root/.cache/huggingface/models--Qwen--Qwen3-Coder-30B-A3B-Instruct/snapshots/b2cff646eb4bb1d68355c01b18ae02e7cf42d120` |
+| `max_model_len` | `131072` |
 
-- [ ] **Step 1: 기존 벤치 홈에 인증 설정이 남아 있는지 확인**
-
-```bash
-ls -la /tmp/qwen-skill-bench.kQ6peY/qwen-home/*.json 2>&1
-ls -la /tmp/qwen-skill-bench.kQ6peY/.qwen/ 2>&1
-```
-
-- [ ] **Step 2: 인증 방법을 확정해 `auth.env`에 기록**
-
-Step 1에서 설정을 찾았으면 그 홈을 재사용한다.
+- [x] **Step 1: 모델 id를 조회해 `auth.env` 생성**
 
 ```bash
-cat > "$SCRATCH/auth.env" <<'EOF'
-export QWEN_HOME=/tmp/qwen-skill-bench.kQ6peY/qwen-home
+MODEL=$(curl -s -m 10 http://172.16.4.249:30000/v1/models \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['data'][0]['id'])")
+cat > "$SCRATCH/auth.env" <<EOF
+export OPENAI_BASE_URL=http://172.16.4.249:30000/v1
+export OPENAI_API_KEY=EMPTY
+export OPENAI_MODEL='$MODEL'
 EOF
+cat "$SCRATCH/auth.env"
 ```
 
-찾지 못했으면 **여기서 멈추고 사용자에게 묻는다.** 자격 증명을 추측하거나 탐색하지 않는다. 물어볼 내용은 정확히 이것이다.
+Expected: 세 줄 모두 출력. `OPENAI_API_KEY`는 sglang이 검증하지 않으므로 placeholder다.
 
-> Qwen을 비대화형(`-p`)으로 돌리려면 인증 설정이 필요합니다. 기존 벤치는 어떤 방식으로 인증했습니까? `--auth-type` 값과 필요한 환경 변수(예: `OPENAI_BASE_URL`, `OPENAI_MODEL`)를 알려주세요. API key 값 자체는 알려주지 마시고, 이미 설정된 파일 경로나 환경 변수 이름만 알려주시면 됩니다.
-
-- [ ] **Step 3: smoke test로 인증과 도구 사용을 동시에 확인**
+- [x] **Step 2: smoke test로 인증과 도구 사용을 동시에 확인**
 
 ```bash
 source "$SCRATCH/auth.env"
@@ -121,28 +118,33 @@ timeout 300 qwen -p "Read application.yml in the current directory and reply wit
 echo "exit=$?"
 ```
 
-Expected: `exit=0`, 그리고 `out.json`의 마지막 이벤트가 `"subtype": "success"`, `is_error: false`.
+Expected: `exit=0`.
 
-- [ ] **Step 4: smoke transcript에 tool_use가 들어 있는지 확인**
+- [x] **Step 3: smoke transcript에 tool_use와 usage가 들어 있는지 확인**
 
 ```bash
 python3 -c "
 import json
 events = json.load(open('$SCRATCH/smoke/out.json'))
 names = [b['name'] for e in events for b in ((e.get('message') or {}).get('content') or []) if isinstance(b, dict) and b.get('type') == 'tool_use']
+result = next(e for e in events if e.get('type') == 'result')
 print('tool_use:', names)
+print('usage:', result.get('usage'))
 assert 'read_file' in names, 'read_file tool_use not found in transcript'
+assert result.get('is_error') is False, 'run reported an error'
 print('OK')
 "
 ```
 
-Expected: `read_file`이 목록에 있고 `OK` 출력.
+실제 확인 결과: `tool_use: ['read_file']`, `is_error: False`, `duration_ms: 11032`, `num_turns: 2`, `usage.input_tokens: 30268`, 응답 `8080`.
 
-이 단계가 실패하면 이후 모든 측정이 무의미하므로 여기서 멈추고 원인을 보고한다.
+**측정에 직접 영향을 주는 발견:** 2줄짜리 파일 하나를 읽는 데 input token이 `30,268`개 들었다. 저장소 내용과 무관한 고정 비용이며, 원인은 Qwen이 주입하는 system prompt와 tool 정의다. `system/init` 이벤트의 `tools` 배열에는 `computer_use__*` 계열을 포함한 대량의 도구가 들어 있다.
 
-- [ ] **Step 5: 커밋 없음**
+이 고정 비용은 arm A와 arm B에 모두 붙지만 성격이 다르다. arm A는 매 request마다 tool 정의를 다시 싣고 turn 수만큼 누적된다. Task 6 보고서에서 두 arm의 token을 비교할 때 이 `약 30K` 고정 바닥을 명시하고, 순수 증분도 함께 제시한다.
 
-이 task는 환경 확인 전용이라 커밋할 파일이 없다. 확인 결과를 다음 task로 전달만 한다.
+- [x] **Step 4: 커밋 없음**
+
+`auth.env`는 `$SCRATCH`에만 두고 커밋하지 않는다. 사용자의 `~/.bashrc`나 `~/.qwen/settings.json`은 수정하지 않았다.
 
 ---
 
@@ -763,6 +765,7 @@ EOF
 
 **남은 위험:**
 
-- Task 1의 인증이 미해결이면 Task 4와 Task 5를 실행할 수 없다. 이것이 유일한 실제 차단 요인이다.
+- ~~Task 1의 인증~~ — 2026-07-27 해결됨. 차단 요인 아님.
 - `/tmp/qwen-skill-bench.kQ6peY/runs/run4.redacted.json`이 사라지면 Task 2의 extractor 검증 근거가 없어진다. Task 2 Step 1에서 먼저 확인한다.
-- arm B 프롬프트에 evidence JSON 전체를 인라인으로 넣으므로 모델 context limit을 넘길 수 있다. 넘치면 실행이 실패하고, 그 실패 자체가 evidence 경로의 한계로서 유효한 측정 결과다. 보고서에 그대로 기록한다.
+- arm B 프롬프트에 evidence JSON 전체를 인라인으로 넣는데, 모델 `max_model_len`이 `131072`이고 system prompt와 tool 정의만으로 이미 약 `30K`가 소모된다. 즉 evidence JSON에 실질적으로 쓸 수 있는 예산은 약 `100K` token이다. Task 5 Step 1 직후 `evidence.json` 크기를 확인해 예산을 넘길 것 같으면 실행 전에 보고한다. 넘쳐서 실패하면 그 실패 자체가 "evidence 전량 주입" 방식의 한계로서 유효한 측정 결과이므로 보고서에 그대로 기록한다.
+- 두 arm 모두 약 `30K` token의 고정 바닥을 공유한다. 절대값만 비교하면 차이가 실제보다 작아 보인다. Task 6에서 고정 바닥을 뺀 증분도 함께 제시한다.
