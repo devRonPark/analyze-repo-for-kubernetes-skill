@@ -217,6 +217,17 @@ Expected behavior:
 - error output identifies invalid citation, schema drift or missing `file:line` or `검색(...)` evidence
 - secret leakage and unsupported deployable/readiness conclusion also block completion
 
+## Scenario 11 — 고정 OSS source 조각에서 repository evidence 분석이 완료되는 경우
+
+`tests/fixtures/oss_runtime/manifest.json`에 등록된 Node.js·Python·Java·Go별 두 개씩, 총 여덟 개의 pinned source fragment를 분석한다.
+
+Expected behavior:
+
+- 각 fixture는 네트워크·fixture 실행·import·의존성 설치 없이 `repository_evidence.py --no-cache`로 완료된다
+- 결과는 repository evidence schema와 source span 및 redaction 계약을 통과한다
+- manifest가 선언한 언어와 positive runtime evidence는 결과에서 확인된다
+- 검증 범위는 분석 완료와 선언된 signal에 한정하며, 다섯 runtime family의 포괄성은 extractor unit test에서 검증한다
+
 ## Regression Fixture Procedure
 
 When a rule changes, keep the legacy repeated-output fixture in `tests/fixtures/regression/expected.json` limited to fixture-schema validation. For black-box regression, run the skill or an explicitly captured report against `tests/fixtures/black_box_repo`, validate the Markdown report with `scripts/validate_report.py`, normalize it with `scripts/normalize_report.py`, and compare it to `tests/fixtures/regression/black_box_expected.json`. The normalized comparison permits no differences in deployment candidates, dependencies, excluded items, repository launch definitions, operating-environment baseline evidence or design-input verdict. Closed/not-planned dependencies `#22` and `#23` are reconciled through the current `validate_report.py` contract and the normalized report model.
