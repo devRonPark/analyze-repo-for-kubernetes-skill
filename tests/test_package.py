@@ -213,6 +213,16 @@ class SkillPackageTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_github_actions_runs_cli_independent_core_suite(self):
+        workflow = (ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
+        self.assertIn(
+            "python3 -m unittest tests.test_black_box_eval tests.test_codex_target_gate_hook tests.test_package "
+            "tests.test_repository_evidence tests.test_trigger_precision_eval -v",
+            workflow,
+        )
+        self.assertNotIn("discover -s tests", workflow)
+        self.assertNotIn("test_repository_distribution", workflow)
+
     def test_target_resolution_gate_contract(self):
         skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
         intake = (ROOT / "references/interview-first-intake.md").read_text(encoding="utf-8")

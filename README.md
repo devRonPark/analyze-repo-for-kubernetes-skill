@@ -158,6 +158,24 @@ python3 scripts/validate_report.py kubernetes-migration-summary.md --mode summar
 python3 scripts/validate_report.py kubernetes-migration-assessment.md --mode detailed --repo-root /path/to/analyzed-repository
 ```
 
+## Evidence cache
+
+`scripts/repository_evidence.py`는 동일한 local checkout을 반복 분석할 때 파일별로 redacted evidence만 재사용하는 disposable local cache를 기본 사용한다. cache key는 정규화된 repository identity와 analysis root, 파일 content hash, evidence schema, language별 runtime extractor version, runtime signal 활성화 상태, rule fingerprint을 포함한다. 파일 stat은 탐색 최적화에만 쓰며 content hash가 재사용의 정확성 경계다.
+
+cache는 분석 대상 repository 안에 쓰지 않으며 raw source body, LLM 판단, 최종 report를 저장하지 않는다. cache entry가 손상되거나 부분적으로 기록된 경우 해당 파일은 miss로 처리해 안전하게 다시 수집한다. cache를 사용하지 않아야 하는 실행에는 다음 옵션을 사용한다.
+
+```bash
+python3 scripts/repository_evidence.py /path/to/repository --no-cache --diagnostics
+```
+
+`--cache-dir <path>`로 disposable cache 위치를 지정할 수 있고, `--diagnostics`는 stderr에 `hit`, `miss`, `invalidated`, `corrupted`, `bypassed` 수를 출력한다. evidence JSON 자체에는 cache 상태를 넣지 않으므로 cached run과 clean run을 동일하게 비교할 수 있다.
+
+## Runtime signal evidence
+
+Scanner는 Node.js, Python, Java, Go source의 검토된 명시적 runtime construct에서만 configuration read, listener, outbound connection, writable path, background registration evidence를 수집한다. 이 결과는 `repository-evidence/v2`의 `provenance: EXTRACTED`로 기록하며, 기존 scanner/pattern evidence는 `INFERRED`로 기록한다. `status`는 source 사실의 확실성이며 provenance와 다른 메타데이터다.
+
+주석, string literal, README, dependency declaration, test-only source, framework default는 runtime signal을 만들지 않는다. `--no-runtime-signals`를 사용하면 universal evidence를 유지한 채 이 추출기만 끈다. extractor가 한 파일에서 실패하면 scan은 계속되고, redacted diagnostic은 JSON의 `diagnostics.runtime_extraction` 및 per-file cache outcome에 보존된다.
+
 ## 패키지 검사와 테스트
 
 ```bash
@@ -168,8 +186,53 @@ python3 scripts/validate_skill.py .
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
+8개의 pinned 공개 OSS 저장소를 실제로 clone하여 repository root 전체를 정적 분석하는 통합 테스트는 네트워크를 사용하므로 기본 CI에서는 건너뜁니다. source·dependency·build는 실행하지 않으며, 필요할 때만 명시적으로 실행합니다.
+
+```bash
+RUN_OSS_REPOSITORY_E2E=1 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_oss_repository_runs -v
+```
+
 ```bash
 python3 scripts/validate_regression.py tests/fixtures/regression/expected.json
+```
+
+`expected.json`는 기존 반복 출력 fixture schema를 검증합니다. 실제 repository-run 회귀 비교는 생성된 report를 먼저 검증한 뒤 normalized snapshot과 비교합니다.
+
+```bash
+python3 scripts/validate_regression.py tests/fixtures/regression/black_box_expected.json --actual-report tests/fixtures/regression/black_box_report.md --repo-root tests/fixtures/black_box_repo
+```
+
+```bash
+python3 scripts/run_black_box_eval.py --repo tests/fixtures/black_box_repo --report tests/fixtures/regression/black_box_report.md --expected tests/fixtures/regression/black_box_expected.json --output black-box-result.json
+```
+
+### 전체 Skill repository 평가
+
+`scripts/run_repository_e2e_eval.py`는 pinned corpus manifest의 모든 저장소를 temporary directory에 checkout하고, 전체 Skill이 생성한 Markdown 보고서를 실제 checkout 기준으로 검증합니다. `--report-dir`에는 fixture ID와 같은 이름의 `<id>.md` 보고서를 두고, 선택한 `--expectations`에는 reviewed normalized expected facts를 둡니다. clone은 항상 `--allow-network`를 명시해야 합니다.
+
+```bash
+python3 scripts/run_repository_e2e_eval.py --manifest tests/fixtures/oss_runtime/manifest.json --report-dir /path/to/reports --expectations /path/to/expectations.json --allow-network --output repository-e2e-result.json
+```
+
+실제 Skill runtime을 연결할 때는 command가 Markdown report를 standard output으로 내보내야 하며, `--allow-live-runtime`도 명시해야 합니다. command는 checkout을 current working directory로 받고 `ANALYZE_REPO_FOR_KUBERNETES_TARGET`, `ANALYZE_REPO_FOR_KUBERNETES_FIXTURE_ID`, `ANALYZE_REPO_FOR_KUBERNETES_REPOSITORY_REVISION`, `ANALYZE_REPO_FOR_KUBERNETES_UPSTREAM`, `ANALYZE_REPO_FOR_KUBERNETES_REPORT_MODE`, `ANALYZE_REPO_FOR_KUBERNETES_PROMPT` 환경 변수를 받습니다. command가 checkout을 수정하거나 untracked file을 만들면 평가를 실패시킵니다.
+
+```bash
+python3 scripts/run_repository_e2e_eval.py --manifest tests/fixtures/oss_runtime/manifest.json --live-command '<Skill runtime command>' --allow-network --allow-live-runtime --output repository-e2e-result.json
+```
+
+expectations JSON은 manifest의 모든 fixture ID를 포함해야 합니다. 아래는 한 항목만 보인 축약 형식이며, 실제 file에는 나머지 fixture ID도 같은 수준으로 넣습니다.
+
+```json
+{
+  "schema_version": 1,
+  "comparison_fields": ["workload_candidates", "design_input_verdict"],
+  "repositories": {
+    "node-sql-pg": {
+      "workload_candidates": [],
+      "design_input_verdict": "추가 정보 필요"
+    }
+  }
+}
 ```
 
 ## Codex 설치

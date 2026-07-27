@@ -3,12 +3,17 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "repository_evidence.py"
+VALIDATOR = ROOT / "scripts" / "validate_repository_evidence.py"
+sys.path.insert(0, str(ROOT / "scripts"))
+import repository_evidence as evidence_collector
+import runtime_signal_extractors
 
 
 class RepositoryEvidenceTests(unittest.TestCase):
@@ -21,6 +26,218 @@ class RepositoryEvidenceTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
         return json.loads(result.stdout)
+
+    def run_collector_process(self, repository: Path, *extra: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["python3", str(SCRIPT), str(repository), *extra],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    def cache_diagnostics(self, result: subprocess.CompletedProcess[str]) -> dict[str, int]:
+        line = next((line for line in result.stderr.splitlines() if line.startswith("cache: ")), None)
+        self.assertIsNotNone(line, result.stderr)
+        return {
+            key: int(value)
+            for key, value in (
+                part.split("=", 1) for part in line.removeprefix("cache: ").split()
+            )
+        }
+
+    def run_validator(self, payload: dict) -> subprocess.CompletedProcess[str]:
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact = Path(tmp) / "repository-evidence.json"
+            artifact.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            return subprocess.run(
+                ["python3", str(VALIDATOR), str(artifact)],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+    def assert_validator_rejects(self, payload: dict, code: str) -> None:
+        result = self.run_validator(payload)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        try:
+            response = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            self.fail("validator did not emit machine-readable JSON: " + result.stdout + result.stderr)
+        self.assertFalse(response["valid"])
+        self.assertIn(code, {error["code"] for error in response["errors"]})
+
+    def test_collector_emits_stable_schema_identity_source_and_provenance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            cache = Path(tmp) / "cache"
+            repo.mkdir()
+            (repo / "package.json").write_text(
+                '{"scripts":{"start":"node src/server.js"},"packageManager":"pnpm@9"}\n',
+                encoding="utf-8",
+            )
+            src = repo / "src"
+            src.mkdir()
+            (src / "server.js").write_text(
+                "const http = require('http')\n"
+                "server.listen(process.env.PORT || 3000)\n",
+                encoding="utf-8",
+            )
+
+            first = self.run_collector_process(repo)
+            second = self.run_collector_process(repo)
+
+        self.assertEqual(first.returncode, 0, first.stderr + first.stdout)
+        self.assertEqual(second.returncode, 0, second.stderr + second.stdout)
+        self.assertEqual(first.stdout, second.stdout)
+
+        payload = json.loads(first.stdout)
+        self.assertEqual(payload["schema_version"], "repository-evidence/v2")
+        ids = [item["id"] for item in payload["evidence"]]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertFalse(any(identifier.startswith("ev-000") for identifier in ids))
+        self.assertEqual({item["provenance"] for item in payload["evidence"]}, {"EXTRACTED", "INFERRED"})
+        self.assertTrue(
+            all(
+                item["kind"].startswith("runtime_")
+                for item in payload["evidence"]
+                if item["provenance"] == "EXTRACTED"
+            )
+        )
+
+        line_counts = {entry["path"]: entry["line_count"] for entry in payload["snapshot"]["files"]}
+        positive_items = [item for item in payload["evidence"] if item["kind"] != "absence"]
+        self.assertTrue(positive_items)
+        for item in positive_items:
+            source = item["source"]
+            self.assertIn(source["path"], line_counts)
+            self.assertGreaterEqual(source["start_line"], 1)
+            self.assertGreaterEqual(source["end_line"], source["start_line"])
+            self.assertLessEqual(source["end_line"], line_counts[source["path"]])
+            self.assertEqual(item["evidence"], f"{source['path']}:{source['start_line']}")
+            expected_extractor = "node_runtime_signals" if item["provenance"] == "EXTRACTED" else "repository_evidence"
+            self.assertEqual(item["extractor"]["name"], expected_extractor)
+            self.assertRegex(item["extractor"]["version"], r"^\d+\.\d+\.\d+$")
+
+        absence = next(item for item in payload["evidence"] if item["kind"] == "absence")
+        self.assertNotIn("source", absence)
+        self.assertEqual(absence["absence"], {"scope": ".", "pattern": "Dockerfile|Containerfile", "result": "없음"})
+
+        validation = self.run_validator(payload)
+        self.assertEqual(validation.returncode, 0, validation.stdout + validation.stderr)
+        self.assertEqual(json.loads(validation.stdout), {"valid": True, "errors": []})
+
+    def test_validator_rejects_malformed_repository_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            (repo / "package.json").write_text('{"scripts":{"start":"node server.js"}}\n', encoding="utf-8")
+            (repo / "server.js").write_text("app.listen(3000)\n", encoding="utf-8")
+            payload = self.run_collector(repo)
+
+        duplicate = json.loads(json.dumps(payload))
+        duplicate["evidence"][1]["id"] = duplicate["evidence"][0]["id"]
+        self.assert_validator_rejects(duplicate, "duplicate_id")
+
+        positive_index = next(index for index, item in enumerate(payload["evidence"]) if item["kind"] != "absence")
+
+        invalid_span = json.loads(json.dumps(payload))
+        invalid_span["evidence"][positive_index]["source"]["end_line"] = 999
+        self.assert_validator_rejects(invalid_span, "source_span_out_of_bounds")
+
+        escaped_path = json.loads(json.dumps(payload))
+        escaped_path["evidence"][positive_index]["source"]["path"] = "../secrets.env"
+        self.assert_validator_rejects(escaped_path, "repository_root_escape")
+
+        unknown_kind = json.loads(json.dumps(payload))
+        unknown_kind["evidence"][positive_index]["kind"] = "llm_readiness_decision"
+        self.assert_validator_rejects(unknown_kind, "unknown_evidence_kind")
+
+        leaked_secret = json.loads(json.dumps(payload))
+        leaked_secret["evidence"][positive_index]["data"]["snippet"] = "API_TOKEN=raw-secret-value"
+        self.assert_validator_rejects(leaked_secret, "secret_value_leak")
+
+        missing_provenance = json.loads(json.dumps(payload))
+        missing_provenance["evidence"][positive_index].pop("provenance")
+        self.assert_validator_rejects(missing_provenance, "invalid_provenance")
+
+        invalid_extracted_provenance = json.loads(json.dumps(payload))
+        record = invalid_extracted_provenance["evidence"][positive_index]
+        record["provenance"] = "EXTRACTED"
+        record["id"] = evidence_collector.stable_evidence_id(
+            record["kind"],
+            record["status"],
+            record["data"],
+            record["source"],
+            provenance=record["provenance"],
+        )
+        self.assert_validator_rejects(invalid_extracted_provenance, "invalid_provenance")
+
+    def test_validator_accepts_v1_payload_with_historical_identity(self):
+        data = {"path": "package.json", "name": "package.json"}
+        source = {"path": "package.json", "start_line": 1, "end_line": 1}
+        payload = {
+            "schema_version": "repository-evidence/v1",
+            "snapshot": {
+                "repository_root": "/tmp/repo",
+                "analysis_root": "/tmp/repo",
+                "subdirectory": ".",
+                "revision": None,
+                "files": [
+                    {"path": "package.json", "size_bytes": 42, "extension": ".json", "line_count": 1},
+                ],
+            },
+            "evidence": [
+                {
+                    "id": evidence_collector.stable_v1_evidence_id("manifest", "confirmed", data, source),
+                    "kind": "manifest",
+                    "status": "confirmed",
+                    "evidence": "package.json:1",
+                    "data": data,
+                    "source": source,
+                    "extractor": {"name": "repository_evidence", "version": "1.0.0"},
+                }
+            ],
+        }
+
+        result = self.run_validator(payload)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout), {"valid": True, "errors": []})
+
+    def test_validator_accepts_current_legacy_evidence_shape(self):
+        legacy = {
+            "schema_version": 1,
+            "snapshot": {
+                "repository_root": "/tmp/repo",
+                "analysis_root": "/tmp/repo",
+                "subdirectory": ".",
+                "revision": None,
+                "files": [
+                    {"path": "package.json", "size_bytes": 42, "extension": ".json", "line_count": 1},
+                ],
+            },
+            "evidence": [
+                {
+                    "id": "ev-0001",
+                    "kind": "manifest",
+                    "status": "confirmed",
+                    "evidence": "package.json:1",
+                    "data": {"path": "package.json", "name": "package.json"},
+                },
+                {
+                    "id": "ev-0002",
+                    "kind": "absence",
+                    "status": "confirmed",
+                    "evidence": "검색(scope=., pattern=Dockerfile|Containerfile, result=없음)",
+                    "data": {"scope": ".", "pattern": "Dockerfile|Containerfile", "result": "없음"},
+                },
+            ],
+        }
+
+        result = self.run_validator(legacy)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(result.stdout), {"valid": True, "errors": []})
 
     def test_snapshot_to_evidence_json_excludes_noise_and_records_absence(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -83,6 +300,327 @@ class RepositoryEvidenceTests(unittest.TestCase):
         self.assertIn("API_TOKEN", rendered)
         self.assertIn("[REDACTED]", rendered)
         self.assertNotIn("do-not-leak-this-token", rendered)
+
+    def test_node_runtime_signals_are_extracted_from_explicit_source_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            source = repo / "src"
+            source.mkdir()
+            (source / "server.js").write_text(
+                "const fs = require('fs')\n"
+                "const { Client } = require('pg')\n"
+                "const db = new Client({ connectionString: process.env.DATABASE_URL })\n"
+                "server.listen(process.env.PORT || 3100, '0.0.0.0')\n"
+                "fs.writeFile(process.env.DATA_PATH, 'value')\n"
+                "setInterval(() => db.query('select 1'), 1000)\n"
+                "// server.listen(9999)\n"
+                "const example = 'fs.writeFile(\"/not-a-path\")'\n",
+                encoding="utf-8",
+            )
+            tests = repo / "tests"
+            tests.mkdir()
+            (tests / "server.test.js").write_text(
+                "server.listen(9876)\nfs.writeFile('/test-output', 'x')\n",
+                encoding="utf-8",
+            )
+            (repo / "README.md").write_text("server.listen(8765)\n", encoding="utf-8")
+            (repo / "package.json").write_text('{"dependencies":{"express":"*"}}\n', encoding="utf-8")
+
+            payload = self.run_collector(repo, "--no-cache")
+
+        expected_kinds = {
+            "runtime_config_read",
+            "runtime_listener",
+            "runtime_outbound_connection",
+            "runtime_writable_path",
+            "runtime_background_registration",
+        }
+        runtime = [item for item in payload["evidence"] if item["kind"] in expected_kinds]
+        self.assertEqual({item["kind"] for item in runtime}, expected_kinds)
+        self.assertTrue(all(item["provenance"] == "EXTRACTED" for item in runtime))
+        self.assertTrue(all(item["status"] == "confirmed" for item in runtime))
+        self.assertTrue(all(item["data"]["language"] == "node" for item in runtime))
+        self.assertTrue(all(item["source"]["path"] == "src/server.js" for item in runtime))
+        listener = next(item for item in runtime if item["kind"] == "runtime_listener")
+        self.assertEqual(listener["data"]["port"], 3100)
+        self.assertEqual(listener["data"]["host"], "0.0.0.0")
+        self.assertFalse(
+            any(item["data"].get("port") in {8765, 9876, 9999} for item in runtime if item["kind"] == "runtime_listener")
+        )
+        writable = next(item for item in runtime if item["kind"] == "runtime_writable_path")
+        self.assertEqual(writable["data"]["path_config_key"], "DATA_PATH")
+        self.assertFalse(
+            any(item["data"].get("path") == "/not-a-path" for item in runtime if item["kind"] == "runtime_writable_path")
+        )
+
+    def test_runtime_signals_can_be_disabled_independently(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            (repo / "server.js").write_text("server.listen(process.env.PORT || 3000)\n", encoding="utf-8")
+
+            enabled = self.run_collector_process(repo, "--no-cache")
+            disabled = self.run_collector_process(repo, "--no-cache", "--no-runtime-signals")
+
+        self.assertEqual(enabled.returncode, 0, enabled.stderr + enabled.stdout)
+        self.assertEqual(disabled.returncode, 0, disabled.stderr + disabled.stdout)
+        enabled_payload = json.loads(enabled.stdout)
+        disabled_payload = json.loads(disabled.stdout)
+        self.assertTrue(any(item["kind"] == "runtime_listener" for item in enabled_payload["evidence"]))
+        self.assertFalse(any(item["kind"].startswith("runtime_") and item["provenance"] == "EXTRACTED" for item in disabled_payload["evidence"]))
+        self.assertTrue(any(item["kind"] == "runtime_entrypoint_hint" for item in disabled_payload["evidence"]))
+
+    def test_python_runtime_signals_are_extracted_from_explicit_source_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            (repo / "app.py").write_text(
+                "import os\n"
+                "import uvicorn\n"
+                "import requests\n"
+                "database_url = os.getenv('DATABASE_URL')\n"
+                "requests.get(os.environ['API_URL'])\n"
+                "open(os.environ['DATA_PATH'], 'w')\n"
+                "scheduler.add_job(work, 'interval')\n"
+                "uvicorn.run(app, host='0.0.0.0', port=8100)\n"
+                "# uvicorn.run(app, port=9999)\n"
+                "example = 'open(\"/not-a-path\", \"w\")'\n",
+                encoding="utf-8",
+            )
+            payload = self.run_collector(repo, "--no-cache")
+
+        expected_kinds = {
+            "runtime_config_read", "runtime_listener", "runtime_outbound_connection",
+            "runtime_writable_path", "runtime_background_registration",
+        }
+        runtime = [item for item in payload["evidence"] if item["kind"] in expected_kinds]
+        self.assertEqual({item["kind"] for item in runtime}, expected_kinds)
+        self.assertTrue(all(item["data"]["language"] == "python" for item in runtime))
+        listener = next(item for item in runtime if item["kind"] == "runtime_listener")
+        self.assertEqual(listener["data"], {"language": "python", "host": "0.0.0.0", "port": 8100})
+
+    def test_java_runtime_signals_are_extracted_from_explicit_source_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            (repo / "App.java").write_text(
+                "String database = System.getenv(\"DATABASE_URL\");\n"
+                "DriverManager.getConnection(System.getenv(\"DATABASE_URL\"));\n"
+                "Files.write(Path.of(System.getenv(\"DATA_PATH\")), bytes);\n"
+                "server = HttpServer.create(new InetSocketAddress(\"0.0.0.0\", 8200), 0);\n"
+                "@Scheduled(fixedDelay = 1000)\n"
+                "void run() {}\n",
+                encoding="utf-8",
+            )
+            payload = self.run_collector(repo, "--no-cache")
+
+        expected_kinds = {
+            "runtime_config_read", "runtime_listener", "runtime_outbound_connection",
+            "runtime_writable_path", "runtime_background_registration",
+        }
+        runtime = [item for item in payload["evidence"] if item["kind"] in expected_kinds]
+        self.assertEqual({item["kind"] for item in runtime}, expected_kinds)
+        self.assertTrue(all(item["data"]["language"] == "java" for item in runtime))
+
+    def test_go_runtime_signals_are_extracted_from_explicit_source_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            (repo / "main.go").write_text(
+                "url := os.Getenv(\"DATABASE_URL\")\n"
+                "db, _ := sql.Open(\"postgres\", os.Getenv(\"DATABASE_URL\"))\n"
+                "os.WriteFile(os.Getenv(\"DATA_PATH\"), body, 0644)\n"
+                "http.ListenAndServe(\"0.0.0.0:8300\", handler)\n"
+                "cron.AddFunc(\"@every 1m\", work)\n",
+                encoding="utf-8",
+            )
+            payload = self.run_collector(repo, "--no-cache")
+
+        expected_kinds = {
+            "runtime_config_read", "runtime_listener", "runtime_outbound_connection",
+            "runtime_writable_path", "runtime_background_registration",
+        }
+        runtime = [item for item in payload["evidence"] if item["kind"] in expected_kinds]
+        self.assertEqual({item["kind"] for item in runtime}, expected_kinds)
+        self.assertTrue(all(item["data"]["language"] == "go" for item in runtime))
+
+    def test_runtime_extractor_failure_isolated_and_reported(self):
+        class FailingNodeExtractor:
+            language = "node"
+            name = "failing_node"
+            version = "1.0.0"
+
+            def extract(self, path: str, lines: list[str]):
+                raise ValueError("API_TOKEN=must-not-leak")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            cache = Path(tmp) / "cache"
+            repo.mkdir()
+            (repo / "server.js").write_text("server.listen(3000)\n", encoding="utf-8")
+            (repo / "app.py").write_text("uvicorn.run(app, port=8100)\n", encoding="utf-8")
+            original = runtime_signal_extractors.EXTRACTORS["node"]
+            runtime_signal_extractors.EXTRACTORS["node"] = FailingNodeExtractor()
+            try:
+                payload = evidence_collector.scan_repository(repo, cache_directory=cache)
+                warm_payload = evidence_collector.scan_repository(repo, cache_directory=cache)
+            finally:
+                runtime_signal_extractors.EXTRACTORS["node"] = original
+
+        self.assertTrue(any(item["kind"] == "runtime_listener" for item in payload["evidence"]))
+        diagnostic = payload["diagnostics"]["runtime_extraction"][0]
+        self.assertEqual(diagnostic["path"], "server.js")
+        self.assertEqual(diagnostic["code"], "extractor_failure")
+        self.assertIn("[REDACTED]", diagnostic["message"])
+        self.assertNotIn("must-not-leak", diagnostic["message"])
+        self.assertEqual(warm_payload["diagnostics"], payload["diagnostics"])
+
+    def test_runtime_extractor_version_invalidates_only_matching_language_cache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            cache = Path(tmp) / "cache"
+            repo.mkdir()
+            (repo / "server.js").write_text("server.listen(process.env.PORT || 3000)\n", encoding="utf-8")
+            (repo / "app.py").write_text("uvicorn.run(app, port=8100)\n", encoding="utf-8")
+            evidence_collector.scan_repository(repo, cache_directory=cache)
+            node = runtime_signal_extractors.EXTRACTORS["node"]
+            original_version = node.version
+            node.version = "1.0.1"
+            try:
+                diagnostics = evidence_collector.CacheDiagnostics()
+                cached = evidence_collector.scan_repository(repo, cache_directory=cache, cache_diagnostics=diagnostics)
+                clean = evidence_collector.scan_repository(repo, cache_directory=None)
+            finally:
+                node.version = original_version
+
+        self.assertEqual(diagnostics.hit, 1)
+        self.assertEqual(diagnostics.invalidated, 1)
+        self.assertEqual(diagnostics.miss, 1)
+        self.assertEqual(cached, clean)
+
+    def test_per_file_cache_reuses_unchanged_evidence_and_matches_a_clean_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            cache = Path(tmp) / "cache"
+            repo.mkdir()
+            (repo / "package.json").write_text('{"scripts":{"start":"node src/server.js"}}\n', encoding="utf-8")
+            (repo / "src").mkdir()
+            (repo / "src" / "server.js").write_text("server.listen(3000)\n", encoding="utf-8")
+
+            clean = self.run_collector_process(repo, "--no-cache", "--diagnostics")
+            first = self.run_collector_process(repo, "--cache-dir", str(cache), "--diagnostics")
+            second = self.run_collector_process(repo, "--cache-dir", str(cache), "--diagnostics")
+
+        self.assertEqual(clean.returncode, 0, clean.stderr + clean.stdout)
+        self.assertEqual(first.returncode, 0, first.stderr + first.stdout)
+        self.assertEqual(second.returncode, 0, second.stderr + second.stdout)
+        self.assertEqual(clean.stdout, first.stdout)
+        self.assertEqual(first.stdout, second.stdout)
+        self.assertEqual(self.cache_diagnostics(clean), {"hit": 0, "miss": 0, "invalidated": 0, "corrupted": 0, "bypassed": 2})
+        self.assertEqual(self.cache_diagnostics(first), {"hit": 0, "miss": 2, "invalidated": 0, "corrupted": 0, "bypassed": 0})
+        self.assertEqual(self.cache_diagnostics(second), {"hit": 2, "miss": 0, "invalidated": 0, "corrupted": 0, "bypassed": 0})
+
+    def test_per_file_cache_invalidates_only_changed_file_and_rule_fingerprint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            cache = Path(tmp) / "cache"
+            repo.mkdir()
+            (repo / "package.json").write_text('{"scripts":{"start":"node src/server.js"}}\n', encoding="utf-8")
+            (repo / "src").mkdir()
+            server = repo / "src" / "server.js"
+            server.write_text("server.listen(3000)\n", encoding="utf-8")
+
+            initial = self.run_collector_process(repo, "--cache-dir", str(cache), "--diagnostics")
+            server.write_text("server.listen(4000)\n", encoding="utf-8")
+            changed = self.run_collector_process(repo, "--cache-dir", str(cache), "--diagnostics")
+            changed_rules = self.run_collector_process(
+                repo, "--cache-dir", str(cache), "--rule-fingerprint", "test-rules-v2", "--diagnostics"
+            )
+
+        self.assertEqual(initial.returncode, 0, initial.stderr + initial.stdout)
+        self.assertEqual(changed.returncode, 0, changed.stderr + changed.stdout)
+        self.assertEqual(changed_rules.returncode, 0, changed_rules.stderr + changed_rules.stdout)
+        self.assertEqual(self.cache_diagnostics(changed), {"hit": 1, "miss": 1, "invalidated": 1, "corrupted": 0, "bypassed": 0})
+        self.assertEqual(self.cache_diagnostics(changed_rules), {"hit": 0, "miss": 2, "invalidated": 2, "corrupted": 0, "bypassed": 0})
+
+    def test_corrupted_cache_entry_is_rebuilt_without_storing_source_or_secret_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            cache = Path(tmp) / "cache"
+            repo.mkdir()
+            (repo / ".env.example").write_text("API_TOKEN=must-not-be-cached\n", encoding="utf-8")
+            first = self.run_collector_process(repo, "--cache-dir", str(cache), "--diagnostics")
+            entry = next(cache.glob("**/entries/*.json"))
+            entry.write_text("{not-json", encoding="utf-8")
+            rebuilt = self.run_collector_process(repo, "--cache-dir", str(cache), "--diagnostics")
+            cached_text = "\n".join(path.read_text(encoding="utf-8") for path in cache.glob("**/*.json"))
+
+        self.assertEqual(first.returncode, 0, first.stderr + first.stdout)
+        self.assertEqual(rebuilt.returncode, 0, rebuilt.stderr + rebuilt.stdout)
+        self.assertEqual(self.cache_diagnostics(rebuilt), {"hit": 0, "miss": 1, "invalidated": 0, "corrupted": 1, "bypassed": 0})
+        self.assertNotIn("must-not-be-cached", cached_text)
+
+    def test_cached_scan_excludes_stale_evidence_after_a_rename_or_deletion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            cache = Path(tmp) / "cache"
+            repo.mkdir()
+            (repo / "package.json").write_text('{"scripts":{"start":"node src/server.js"}}\n', encoding="utf-8")
+            source = repo / "src"
+            source.mkdir()
+            server = source / "server.js"
+            server.write_text("server.listen(3000)\n", encoding="utf-8")
+            self.run_collector_process(repo, "--cache-dir", str(cache), "--diagnostics")
+
+            renamed = source / "api.js"
+            server.rename(renamed)
+            renamed_run = self.run_collector_process(repo, "--cache-dir", str(cache), "--diagnostics")
+            renamed_clean = self.run_collector_process(repo, "--no-cache")
+            renamed.unlink()
+            deleted_run = self.run_collector_process(repo, "--cache-dir", str(cache), "--diagnostics")
+            deleted_clean = self.run_collector_process(repo, "--no-cache")
+
+        self.assertEqual(renamed_run.returncode, 0, renamed_run.stderr + renamed_run.stdout)
+        self.assertEqual(deleted_run.returncode, 0, deleted_run.stderr + deleted_run.stdout)
+        self.assertEqual(renamed_run.stdout, renamed_clean.stdout)
+        self.assertEqual(deleted_run.stdout, deleted_clean.stdout)
+        self.assertNotIn("src/server.js", renamed_run.stdout)
+        self.assertNotIn("src/api.js", deleted_run.stdout)
+        self.assertEqual(self.cache_diagnostics(renamed_run), {"hit": 1, "miss": 1, "invalidated": 0, "corrupted": 0, "bypassed": 0})
+        self.assertEqual(self.cache_diagnostics(deleted_run), {"hit": 1, "miss": 0, "invalidated": 0, "corrupted": 0, "bypassed": 0})
+
+    def test_extractor_version_change_invalidates_cached_file_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            cache = Path(tmp) / "cache"
+            repo.mkdir()
+            (repo / "package.json").write_text('{"scripts":{"start":"node server.js"}}\n', encoding="utf-8")
+            (repo / "server.js").write_text("server.listen(3000)\n", encoding="utf-8")
+            first_diagnostics = evidence_collector.CacheDiagnostics()
+            evidence_collector.scan_repository(repo, cache_directory=cache, cache_diagnostics=first_diagnostics)
+            original_version = evidence_collector.EXTRACTOR_VERSION
+            evidence_collector.EXTRACTOR_VERSION = "1.0.1"
+            try:
+                changed_diagnostics = evidence_collector.CacheDiagnostics()
+                evidence_collector.scan_repository(repo, cache_directory=cache, cache_diagnostics=changed_diagnostics)
+            finally:
+                evidence_collector.EXTRACTOR_VERSION = original_version
+            original_schema = evidence_collector.EVIDENCE_SCHEMA_VERSION
+            evidence_collector.EVIDENCE_SCHEMA_VERSION = "repository-evidence/v2"
+            try:
+                schema_diagnostics = evidence_collector.CacheDiagnostics()
+                evidence_collector.scan_repository(repo, cache_directory=cache, cache_diagnostics=schema_diagnostics)
+            finally:
+                evidence_collector.EVIDENCE_SCHEMA_VERSION = original_schema
+
+        self.assertEqual(first_diagnostics.miss, 2)
+        self.assertEqual(changed_diagnostics.hit, 0)
+        self.assertEqual(changed_diagnostics.miss, 2)
+        self.assertEqual(changed_diagnostics.invalidated, 2)
+        self.assertEqual(schema_diagnostics.hit, 0)
+        self.assertEqual(schema_diagnostics.miss, 2)
+        self.assertEqual(schema_diagnostics.invalidated, 2)
 
     def test_subdirectory_must_stay_inside_repository_root(self):
         with tempfile.TemporaryDirectory() as tmp:

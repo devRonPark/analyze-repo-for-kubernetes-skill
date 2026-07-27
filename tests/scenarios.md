@@ -217,6 +217,39 @@ Expected behavior:
 - error output identifies invalid citation, schema drift or missing `file:line` or `검색(...)` evidence
 - secret leakage and unsupported deployable/readiness conclusion also block completion
 
+## Scenario 11 — 고정 OSS source 조각에서 repository evidence 분석이 완료되는 경우
+
+`tests/fixtures/oss_runtime/manifest.json`에 등록된 Node.js·Python·Java·Go별 두 개씩, 총 여덟 개의 pinned source fragment를 분석한다.
+
+Expected behavior:
+
+- 각 fixture는 네트워크·fixture 실행·import·의존성 설치 없이 `repository_evidence.py --no-cache`로 완료된다
+- 결과는 repository evidence schema와 source span 및 redaction 계약을 통과한다
+- manifest가 선언한 언어와 positive runtime evidence는 결과에서 확인된다
+- 검증 범위는 분석 완료와 선언된 signal에 한정하며, 다섯 runtime family의 포괄성은 extractor unit test에서 검증한다
+
+## Scenario 12 — pinned OSS 전체 저장소에서 opt-in repository-run 분석이 완료되는 경우
+
+`RUN_OSS_REPOSITORY_E2E=1`인 경우 manifest에 등록된 여덟 upstream을 각 pinned SHA로 temporary directory에 clone한 뒤, repository root 전체에서 `repository_evidence.py --no-cache`를 실행한다.
+
+Expected behavior:
+
+- upstream application, dependency, build 또는 import를 실행하지 않고 Git checkout과 정적 evidence collection만 수행한다
+- 각 snapshot revision은 manifest commit과 같고 upstream source path가 snapshot에 포함된다
+- validator, source span, declared positive runtime evidence 계약을 통과한다
+- 네트워크를 사용하므로 환경 변수가 없을 때 기본 unittest와 CI에서 skip한다
+
+## Scenario 13 — 전체 Skill repository 평가 파이프라인
+
+각 pinned checkout에 대한 전체 Skill Markdown report를 `run_repository_e2e_eval.py`로 검증한다.
+
+Expected behavior:
+
+- clone은 `--allow-network`, external Skill runtime command는 `--allow-live-runtime` 없이는 실행하지 않는다
+- report directory 또는 live command stdout 중 하나만 입력으로 받고, live command는 checkout을 current working directory로 사용한다
+- report validator가 각 checkout의 실제 file:line citation을 검증하고 normalized result를 하나의 JSON artifact로 집계한다
+- reviewed expectations가 있으면 manifest의 모든 fixture ID와 선언된 comparison field를 비교하고, 불일치는 pipeline 실패로 기록한다
+
 ## Regression Fixture Procedure
 
-When a rule changes, add the anonymized fixed output's expected core fields to `tests/fixtures/regression/expected.json` and include two repeated results. The CI comparison permits no differences in deployment candidates, dependencies, excluded items, repository launch definitions, operating-environment baseline evidence or design-input verdict. Add a deliberately invalid output fixture when the change fixes an output-schema regression.
+When a rule changes, keep the legacy repeated-output fixture in `tests/fixtures/regression/expected.json` limited to fixture-schema validation. For black-box regression, run the skill or an explicitly captured report against `tests/fixtures/black_box_repo`, validate the Markdown report with `scripts/validate_report.py`, normalize it with `scripts/normalize_report.py`, and compare it to `tests/fixtures/regression/black_box_expected.json`. The normalized comparison permits no differences in deployment candidates, dependencies, excluded items, repository launch definitions, operating-environment baseline evidence or design-input verdict. Closed/not-planned dependencies `#22` and `#23` are reconciled through the current `validate_report.py` contract and the normalized report model.

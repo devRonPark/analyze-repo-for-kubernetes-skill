@@ -3,15 +3,78 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict, dataclass
+from dataclasses import field
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 from typing import Any, Callable
 
+from repository_inventory import build_inventory, format_diagnostics, included_file_records
+from runtime_signal_extractors import runtime_extractor_for
 
+
+EVIDENCE_SCHEMA_VERSION = "repository-evidence/v2"
+LEGACY_V1_SCHEMA_VERSION = "repository-evidence/v1"
+EXTRACTOR_NAME = "repository_evidence"
+EXTRACTOR_VERSION = "1.0.0"
+RULE_FINGERPRINT = "universal-evidence-rules/v1"
+DEFAULT_CACHE_DIRECTORY = Path(tempfile.gettempdir()) / "analyze-repo-for-kubernetes-evidence-cache"
+ALLOWED_PROVENANCE = {"EXTRACTED", "INFERRED"}
+RUNTIME_EVIDENCE_KINDS = {
+    "runtime_background_registration",
+    "runtime_config_read",
+    "runtime_listener",
+    "runtime_outbound_connection",
+    "runtime_writable_path",
+}
+ALLOWED_EVIDENCE_KINDS = {
+    "absence",
+    "compose_env_key",
+    "compose_service",
+    "compose_service_field",
+    "config_key",
+    "container_definition",
+    "dependency_hint",
+    "docker_env_key",
+    "docker_instruction",
+    "dotnet_project_hint",
+    "environment_access",
+    "go_module_hint",
+    "helm_chart",
+    "helm_template_resource",
+    "helm_values_key",
+    "java_build_hint",
+    "java_wrapper",
+    "kubernetes_container_field",
+    "kubernetes_env_key",
+    "kubernetes_metadata",
+    "kubernetes_probe",
+    "kubernetes_resource",
+    "kubernetes_service_exposure",
+    "kubernetes_volume",
+    "kustomize_composition",
+    "language_manifest",
+    "language_runtime_entrypoint_hint",
+    "manifest",
+    "node_script",
+    "node_script_or_entrypoint",
+    "node_workspace",
+    "package_manager_conflict",
+    "package_manager_hint",
+    "php_artisan_hint",
+    "platform_config_hint",
+    "platform_hint",
+    "platform_process",
+    "python_dependency_or_lock",
+    "runtime_entrypoint_hint",
+    *RUNTIME_EVIDENCE_KINDS,
+    "rust_cargo_hint",
+}
 EXCLUDED_PATH_PARTS = {
     ".git",
     ".hg",
@@ -159,6 +222,9 @@ class FileRecord:
     size_bytes: int
     extension: str
     line_count: int
+    content_sha256: str
+    mtime_ns: int
+    language: str | None
 
 
 @dataclass(frozen=True)
@@ -175,8 +241,251 @@ class EvidenceRecord:
     id: str
     kind: str
     status: str
+    provenance: str
     evidence: str
     data: dict[str, Any]
+    source: dict[str, int | str] | None = None
+    absence: dict[str, str] | None = None
+    extractor: dict[str, str] = field(
+        default_factory=lambda: {"name": EXTRACTOR_NAME, "version": EXTRACTOR_VERSION}
+    )
+
+
+@dataclass
+class CacheDiagnostics:
+    hit: int = 0
+    miss: int = 0
+    invalidated: int = 0
+    corrupted: int = 0
+    bypassed: int = 0
+
+
+def canonical_sha256(value: Any) -> str:
+    return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
+
+
+def evidence_record_from_dict(value: Any) -> EvidenceRecord:
+    if not isinstance(value, dict):
+        raise ValueError("cached evidence record must be an object")
+    required_strings = ("id", "kind", "status", "provenance", "evidence")
+    if any(not isinstance(value.get(key), str) for key in required_strings):
+        raise ValueError("cached evidence record has invalid string fields")
+    if (
+        value["kind"] not in ALLOWED_EVIDENCE_KINDS
+        or value["status"] not in {"confirmed", "inferred", "unknown", "conflict"}
+        or value["provenance"] not in ALLOWED_PROVENANCE
+    ):
+        raise ValueError("cached evidence record has unsupported kind or status")
+    data = value.get("data")
+    if not isinstance(data, dict):
+        raise ValueError("cached evidence record data must be an object")
+    source = value.get("source")
+    absence = value.get("absence")
+    extractor = value.get("extractor")
+    if source is not None and not isinstance(source, dict):
+        raise ValueError("cached evidence source must be an object")
+    if absence is not None and not isinstance(absence, dict):
+        raise ValueError("cached absence evidence must be an object")
+    if source is not None and (
+        not isinstance(source.get("path"), str)
+        or not isinstance(source.get("start_line"), int)
+        or not isinstance(source.get("end_line"), int)
+    ):
+        raise ValueError("cached evidence source has invalid fields")
+    if absence is not None and not all(isinstance(absence.get(key), str) for key in ("scope", "pattern", "result")):
+        raise ValueError("cached absence evidence has invalid fields")
+    if (
+        (value["kind"] == "absence") != (absence is not None)
+        or (value["kind"] == "absence" and source is not None)
+        or (value["kind"] != "absence" and source is None)
+    ):
+        raise ValueError("cached evidence has inconsistent absence fields")
+    if (
+        not isinstance(extractor, dict)
+        or not isinstance(extractor.get("name"), str)
+        or not isinstance(extractor.get("version"), str)
+        or not re.fullmatch(r"\d+\.\d+\.\d+", extractor["version"])
+    ):
+        raise ValueError("cached evidence extractor is invalid")
+    record = EvidenceRecord(
+        id=value["id"],
+        kind=value["kind"],
+        status=value["status"],
+        provenance=value["provenance"],
+        evidence=value["evidence"],
+        data=data,
+        source=source,
+        absence=absence,
+        extractor=extractor,
+    )
+    expected_id = stable_evidence_id(
+        record.kind,
+        record.status,
+        record.data,
+        record.source,
+        record.absence,
+        record.provenance,
+    )
+    if record.id != expected_id:
+        raise ValueError("cached evidence record identity does not match its contents")
+    return record
+
+
+class EvidenceCache:
+    def __init__(
+        self,
+        cache_directory: Path | None,
+        snapshot: RepositorySnapshot,
+        rule_fingerprint: str,
+        diagnostics: CacheDiagnostics,
+        runtime_signals_enabled: bool = True,
+    ) -> None:
+        self.cache_directory = cache_directory
+        self.snapshot = snapshot
+        self.rule_fingerprint = rule_fingerprint
+        self.diagnostics = diagnostics
+        self.runtime_signals_enabled = runtime_signals_enabled
+        self.cached_runtime_diagnostics: dict[str, list[dict[str, str]]] = {}
+        repository_identity = str(Path(snapshot.repository_root).resolve())
+        self.namespace = canonical_sha256(
+            {
+                "analysis_root": snapshot.subdirectory,
+                "repository_identity": repository_identity,
+            }
+        )
+
+    @property
+    def enabled(self) -> bool:
+        return self.cache_directory is not None
+
+    def _cache_identity(self, file_record: FileRecord) -> dict[str, str]:
+        runtime_extractor = runtime_extractor_for(file_record.language) if self.runtime_signals_enabled else None
+        return {
+            "analysis_root": self.snapshot.subdirectory,
+            "content_sha256": file_record.content_sha256,
+            "evidence_schema_version": EVIDENCE_SCHEMA_VERSION,
+            "extractor_name": EXTRACTOR_NAME,
+            "extractor_version": EXTRACTOR_VERSION,
+            "path": file_record.path,
+            "repository_identity": str(Path(self.snapshot.repository_root).resolve()),
+            "rule_fingerprint": self.rule_fingerprint,
+            "runtime_signals_enabled": str(self.runtime_signals_enabled).lower(),
+            "runtime_extractor": (
+                f"{runtime_extractor.name}@{runtime_extractor.version}" if runtime_extractor is not None else "none"
+            ),
+        }
+
+    def _entry_path(self, cache_key: str) -> Path:
+        assert self.cache_directory is not None
+        return self.cache_directory / self.namespace / "entries" / f"{cache_key}.json"
+
+    def _index_path(self, file_record: FileRecord) -> Path:
+        assert self.cache_directory is not None
+        return self.cache_directory / self.namespace / "index" / f"{canonical_sha256(file_record.path)}.json"
+
+    @staticmethod
+    def _read_json(path: Path) -> Any:
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    @staticmethod
+    def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                json.dump(value, handle, ensure_ascii=False, indent=2, sort_keys=True)
+                handle.write("\n")
+            os.replace(temporary_name, path)
+        finally:
+            if os.path.exists(temporary_name):
+                os.unlink(temporary_name)
+
+    def get(self, file_record: FileRecord) -> list[EvidenceRecord] | None:
+        if not self.enabled:
+            self.diagnostics.bypassed += 1
+            return None
+
+        identity = self._cache_identity(file_record)
+        cache_key = canonical_sha256(identity)
+        index_path = self._index_path(file_record)
+        entry_path = self._entry_path(cache_key)
+        try:
+            index = self._read_json(index_path) if index_path.exists() else None
+        except (OSError, json.JSONDecodeError):
+            self.diagnostics.corrupted += 1
+            self.diagnostics.miss += 1
+            return None
+        if index is None:
+            if entry_path.exists():
+                self.diagnostics.corrupted += 1
+            self.diagnostics.miss += 1
+            return None
+        if not isinstance(index, dict) or not isinstance(index.get("cache_key"), str):
+            self.diagnostics.corrupted += 1
+            self.diagnostics.miss += 1
+            return None
+        if index["cache_key"] != cache_key:
+            self.diagnostics.invalidated += 1
+            self.diagnostics.miss += 1
+            return None
+        # Stat metadata is only a fast path. The content hash is already part of cache_key.
+        if index.get("mtime_ns") != file_record.mtime_ns or index.get("size_bytes") != file_record.size_bytes:
+            self.diagnostics.miss += 1
+            return None
+        if not entry_path.exists():
+            self.diagnostics.corrupted += 1
+            self.diagnostics.miss += 1
+            return None
+        try:
+            entry = self._read_json(entry_path)
+            if not isinstance(entry, dict) or entry.get("cache_key") != cache_key:
+                raise ValueError("cached entry key does not match")
+            records = entry.get("records")
+            if not isinstance(records, list):
+                raise ValueError("cached entry records must be a list")
+            runtime_diagnostics = entry.get("runtime_diagnostics", [])
+            if not isinstance(runtime_diagnostics, list) or not all(isinstance(item, dict) for item in runtime_diagnostics):
+                raise ValueError("cached runtime diagnostics must be a list")
+            restored = [evidence_record_from_dict(record) for record in records]
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            self.diagnostics.corrupted += 1
+            self.diagnostics.miss += 1
+            return None
+        self.diagnostics.hit += 1
+        self.cached_runtime_diagnostics[file_record.path] = runtime_diagnostics
+        return restored
+
+    def cached_diagnostics_for(self, file_record: FileRecord) -> list[dict[str, str]]:
+        return self.cached_runtime_diagnostics.get(file_record.path, [])
+
+    def put(
+        self,
+        file_record: FileRecord,
+        records: list[EvidenceRecord],
+        runtime_diagnostics: list[dict[str, str]] | None = None,
+    ) -> None:
+        if not self.enabled:
+            return
+        identity = self._cache_identity(file_record)
+        cache_key = canonical_sha256(identity)
+        entry = {
+            "cache_key": cache_key,
+            "identity": identity,
+            "records": [evidence_record_to_dict(record) for record in records],
+            "runtime_diagnostics": runtime_diagnostics or [],
+        }
+        index = {
+            "cache_key": cache_key,
+            "content_sha256": file_record.content_sha256,
+            "mtime_ns": file_record.mtime_ns,
+            "size_bytes": file_record.size_bytes,
+        }
+        try:
+            self._atomic_write_json(self._entry_path(cache_key), entry)
+            self._atomic_write_json(self._index_path(file_record), index)
+        except OSError:
+            # A disposable cache must never turn a read-only scan into a failure.
+            self.diagnostics.bypassed += 1
 
 
 def resolve_roots(target: Path, subdirectory: str) -> tuple[Path, Path, str]:
@@ -256,31 +565,29 @@ def redact_sensitive_text(text: str) -> str:
 
 
 def walk_text_files(repository_root: Path, analysis_root: Path) -> list[FileRecord]:
+    relative = analysis_root.relative_to(repository_root).as_posix() or "."
+    inventory = build_inventory(repository_root, analysis_root, relative)
     records: list[FileRecord] = []
-    for directory, dirnames, filenames in os.walk(analysis_root, topdown=True, followlinks=False):
-        dirnames[:] = sorted(
-            name
-            for name in dirnames
-            if not is_generated_path((Path(directory) / name).relative_to(repository_root).as_posix())
-        )
-        for filename in sorted(filenames):
-            candidate = Path(directory) / filename
-            if candidate.is_symlink() or not candidate.is_file():
-                continue
-            relative_path = candidate.relative_to(repository_root).as_posix()
-            if is_generated_path(relative_path) or is_binary_file(candidate):
-                continue
-            try:
-                stat = candidate.stat()
-                line_count = len(read_lines(candidate))
-            except OSError:
-                continue
+    for entry in included_file_records(inventory):
+        size_bytes = entry.get("size_bytes")
+        line_count = entry.get("line_count")
+        content_sha256 = entry.get("content_sha256")
+        mtime_ns = entry.get("mtime_ns")
+        if (
+            isinstance(size_bytes, int)
+            and isinstance(line_count, int)
+            and isinstance(content_sha256, str)
+            and isinstance(mtime_ns, int)
+        ):
             records.append(
                 FileRecord(
-                    path=relative_path,
-                    size_bytes=stat.st_size,
-                    extension=candidate.suffix.lower(),
+                    path=str(entry["path"]),
+                    size_bytes=size_bytes,
+                    extension=str(entry.get("extension", "")),
                     line_count=line_count,
+                    content_sha256=content_sha256,
+                    mtime_ns=mtime_ns,
+                    language=entry.get("language") if isinstance(entry.get("language"), str) else None,
                 )
             )
     return records
@@ -309,6 +616,118 @@ def is_config_candidate(path: str) -> bool:
 
 def positive_evidence(path: str, line_number: int) -> str:
     return f"{path}:{line_number}"
+
+
+def parse_positive_evidence(evidence: str) -> dict[str, int | str] | None:
+    match = re.match(r"^(.+):([1-9][0-9]*)(?:-([1-9][0-9]*))?$", evidence)
+    if not match:
+        return None
+    start_line = int(match.group(2))
+    end_line = int(match.group(3) or start_line)
+    return {"path": match.group(1), "start_line": start_line, "end_line": end_line}
+
+
+def canonical_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def stable_evidence_id(
+    kind: str,
+    status: str,
+    data: dict[str, Any],
+    source: dict[str, int | str] | None = None,
+    absence: dict[str, str] | None = None,
+    provenance: str = "INFERRED",
+) -> str:
+    # Status is mutable confidence metadata; it is not part of evidence identity.
+    identity = {
+        "absence": absence,
+        "data": data,
+        "kind": kind,
+        "provenance": provenance,
+        "source": source,
+    }
+    digest = hashlib.sha256(canonical_json(identity).encode("utf-8")).hexdigest()[:20]
+    return f"ev_{digest}"
+
+
+def stable_v1_evidence_id(
+    kind: str,
+    status: str,
+    data: dict[str, Any],
+    source: dict[str, int | str] | None = None,
+    absence: dict[str, str] | None = None,
+) -> str:
+    identity = {
+        "absence": absence,
+        "data": data,
+        "kind": kind,
+        "source": source,
+    }
+    digest = hashlib.sha256(canonical_json(identity).encode("utf-8")).hexdigest()[:20]
+    return f"ev_{digest}"
+
+
+def build_evidence_record(
+    kind: str,
+    evidence: str,
+    data: dict[str, Any],
+    status: str = "confirmed",
+    source: dict[str, int | str] | None = None,
+    absence: dict[str, str] | None = None,
+    provenance: str = "INFERRED",
+    extractor: dict[str, str] | None = None,
+) -> EvidenceRecord:
+    if kind == "absence" and absence is None:
+        absence = {
+            "scope": str(data.get("scope", "")),
+            "pattern": str(data.get("pattern", "")),
+            "result": str(data.get("result", "")),
+        }
+    if kind != "absence" and source is None:
+        source = parse_positive_evidence(evidence)
+    return EvidenceRecord(
+        id=stable_evidence_id(kind, status, data, source=source, absence=absence, provenance=provenance),
+        kind=kind,
+        status=status,
+        provenance=provenance,
+        evidence=evidence,
+        data=data,
+        source=source,
+        absence=absence,
+        extractor=extractor or {"name": EXTRACTOR_NAME, "version": EXTRACTOR_VERSION},
+    )
+
+
+def evidence_record_to_dict(record: EvidenceRecord) -> dict[str, Any]:
+    rendered = asdict(record)
+    if rendered.get("source") is None:
+        rendered.pop("source", None)
+    if rendered.get("absence") is None:
+        rendered.pop("absence", None)
+    return rendered
+
+
+def evidence_sort_key(record: EvidenceRecord) -> tuple[Any, ...]:
+    source = record.source or {}
+    absence = record.absence or {}
+    return (
+        record.kind,
+        source.get("path", ""),
+        source.get("start_line", 0),
+        source.get("end_line", 0),
+        absence.get("scope", ""),
+        absence.get("pattern", ""),
+        canonical_json(record.data),
+        record.id,
+    )
+
+
+def dedupe_and_sort_evidence(records: list[EvidenceRecord]) -> list[EvidenceRecord]:
+    by_id: dict[str, EvidenceRecord] = {}
+    for record in records:
+        by_id.setdefault(record.id, record)
+    return sorted(by_id.values(), key=evidence_sort_key)
 
 
 def leading_spaces(line: str) -> int:
@@ -634,108 +1053,177 @@ def collect_package_manager_conflicts(records: list[EvidenceRecord]) -> list[Evi
         if len(managers) < 2:
             continue
         conflicts.append(
-            EvidenceRecord(
-                id=f"ev-{len(records) + len(conflicts) + 1:04d}",
-                kind="package_manager_conflict",
-                status="confirmed",
-                evidence=manager_records[0].evidence,
-                data={"scope": scope, "managers": managers},
+            build_evidence_record(
+                "package_manager_conflict",
+                manager_records[0].evidence,
+                {"scope": scope, "managers": managers},
+                source=manager_records[0].source,
             )
         )
     return conflicts
 
 
-def collect_universal_evidence(snapshot: RepositorySnapshot) -> list[EvidenceRecord]:
-    repository_root = Path(snapshot.repository_root)
+def collect_file_evidence(
+    repository_root: Path,
+    file_record: FileRecord,
+    runtime_signals_enabled: bool = True,
+    runtime_diagnostics: list[dict[str, str]] | None = None,
+) -> list[EvidenceRecord]:
+    path = file_record.path
+    source = repository_root / path
+    name = Path(path).name
     records: list[EvidenceRecord] = []
-    seen_container_definition = False
 
     def add(kind: str, evidence: str, data: dict[str, Any]) -> None:
-        records.append(
-            EvidenceRecord(
-                id=f"ev-{len(records) + 1:04d}",
-                kind=kind,
-                status="confirmed",
-                evidence=evidence,
-                data=data,
-            )
+        records.append(build_evidence_record(kind, evidence, data))
+
+    if name in {"Dockerfile", "Containerfile"} or name.startswith(("Dockerfile.", "Containerfile.")):
+        add(
+            "container_definition",
+            positive_evidence(path, 1),
+            {"path": path, "name": name},
         )
+    if is_manifest(path):
+        add("manifest", positive_evidence(path, 1), {"path": path, "name": name})
+    try:
+        lines = read_lines(source)
+    except OSError:
+        return []
+    collect_language_evidence(path, lines, add)
+    collect_platform_evidence(path, lines, add)
+    if name in {"Dockerfile", "Containerfile"} or name.startswith(("Dockerfile.", "Containerfile.")):
+        collect_docker_evidence(path, lines, add)
+    if is_compose_file(name):
+        collect_compose_evidence(path, lines, add)
+    if name.endswith((".yaml", ".yml")):
+        collect_kubernetes_evidence(path, lines, add)
+        collect_helm_evidence(path, lines, add)
+        collect_kustomize_evidence(path, lines, add)
+    if is_config_candidate(path) and name.endswith(".json"):
+        collect_json_config_keys(path, lines, add)
+    for index, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if is_config_candidate(path) and not name.endswith(".json"):
+            config_key = config_key_name(stripped)
+            if config_key:
+                data = {"path": path, "key": config_key}
+                if SECRET_LINE.match(stripped):
+                    data["snippet"] = redact_sensitive_text(stripped)
+                add("config_key", positive_evidence(path, index), data)
+        if RUNTIME_HINT.search(stripped):
+            add(
+                "runtime_entrypoint_hint",
+                positive_evidence(path, index),
+                {"path": path},
+            )
+        if DEPENDENCY_HINT.search(stripped):
+            add(
+                "dependency_hint",
+                positive_evidence(path, index),
+                {"path": path},
+            )
+    runtime_extractor = runtime_extractor_for(file_record.language) if runtime_signals_enabled else None
+    if runtime_extractor is not None:
+        descriptor = {"name": runtime_extractor.name, "version": runtime_extractor.version}
+        try:
+            outcome = runtime_extractor.extract(path, lines)
+        except Exception as error:
+            if runtime_diagnostics is not None:
+                message = redact_sensitive_text(str(error))[:240]
+                runtime_diagnostics.append(
+                    {
+                        "path": path,
+                        "language": runtime_extractor.language,
+                        "extractor": runtime_extractor.name,
+                        "version": runtime_extractor.version,
+                        "code": "extractor_failure",
+                        "message": message,
+                    }
+                )
+        else:
+            for signal in outcome.signals:
+                records.append(
+                    build_evidence_record(
+                        signal.kind,
+                        positive_evidence(path, signal.line),
+                        signal.data,
+                        provenance="EXTRACTED",
+                        extractor=descriptor,
+                    )
+                )
+    return dedupe_and_sort_evidence(records)
+
+
+def collect_universal_evidence(
+    snapshot: RepositorySnapshot,
+    cache: EvidenceCache,
+    runtime_signals_enabled: bool = True,
+) -> tuple[list[EvidenceRecord], list[dict[str, str]]]:
+    repository_root = Path(snapshot.repository_root)
+    records: list[EvidenceRecord] = []
+    runtime_diagnostics: list[dict[str, str]] = []
+    seen_container_definition = False
 
     for file_record in snapshot.files:
-        path = file_record.path
-        source = repository_root / path
-        name = Path(path).name
+        cached_records = cache.get(file_record)
+        if cached_records is None:
+            diagnostic_start = len(runtime_diagnostics)
+            cached_records = collect_file_evidence(repository_root, file_record, runtime_signals_enabled, runtime_diagnostics)
+            cache.put(file_record, cached_records, runtime_diagnostics[diagnostic_start:])
+        else:
+            runtime_diagnostics.extend(cache.cached_diagnostics_for(file_record))
+        records.extend(cached_records)
+        name = Path(file_record.path).name
         if name in {"Dockerfile", "Containerfile"} or name.startswith(("Dockerfile.", "Containerfile.")):
             seen_container_definition = True
-            add(
-                "container_definition",
-                positive_evidence(path, 1),
-                {"path": path, "name": name},
-            )
-        if is_manifest(path):
-            add("manifest", positive_evidence(path, 1), {"path": path, "name": name})
-        try:
-            lines = read_lines(source)
-        except OSError:
-            continue
-        collect_language_evidence(path, lines, add)
-        collect_platform_evidence(path, lines, add)
-        if name in {"Dockerfile", "Containerfile"} or name.startswith(("Dockerfile.", "Containerfile.")):
-            collect_docker_evidence(path, lines, add)
-        if is_compose_file(name):
-            collect_compose_evidence(path, lines, add)
-        if name.endswith((".yaml", ".yml")):
-            collect_kubernetes_evidence(path, lines, add)
-            collect_helm_evidence(path, lines, add)
-            collect_kustomize_evidence(path, lines, add)
-        if is_config_candidate(path) and name.endswith(".json"):
-            collect_json_config_keys(path, lines, add)
-        for index, line in enumerate(lines, start=1):
-            stripped = line.strip()
-            if not stripped:
-                continue
-            if is_config_candidate(path) and not name.endswith(".json"):
-                config_key = config_key_name(stripped)
-                if config_key:
-                    data = {"path": path, "key": config_key}
-                    if SECRET_LINE.match(stripped):
-                        data["snippet"] = redact_sensitive_text(stripped)
-                    add("config_key", positive_evidence(path, index), data)
-            if RUNTIME_HINT.search(stripped):
-                add(
-                    "runtime_entrypoint_hint",
-                    positive_evidence(path, index),
-                    {"path": path},
-                )
-            if DEPENDENCY_HINT.search(stripped):
-                add(
-                    "dependency_hint",
-                    positive_evidence(path, index),
-                    {"path": path},
-                )
 
     records.extend(collect_package_manager_conflicts(records))
     if not seen_container_definition:
         scope = snapshot.subdirectory
-        add(
-            "absence",
-            f"검색(scope={scope}, pattern=Dockerfile|Containerfile, result=없음)",
-            {"scope": scope, "pattern": "Dockerfile|Containerfile", "result": "없음"},
+        records.append(
+            build_evidence_record(
+                "absence",
+                f"검색(scope={scope}, pattern=Dockerfile|Containerfile, result=없음)",
+                {"scope": scope, "pattern": "Dockerfile|Containerfile", "result": "없음"},
+            )
         )
-    return records
+    return dedupe_and_sort_evidence(records), sorted(
+        runtime_diagnostics,
+        key=lambda item: (item["path"], item["language"], item["extractor"], item["version"], item["code"]),
+    )
 
 
-def scan_repository(target: Path, subdirectory: str = ".") -> dict[str, Any]:
+def scan_repository(
+    target: Path,
+    subdirectory: str = ".",
+    cache_directory: Path | None = DEFAULT_CACHE_DIRECTORY,
+    rule_fingerprint: str = RULE_FINGERPRINT,
+    cache_diagnostics: CacheDiagnostics | None = None,
+    runtime_signals_enabled: bool = True,
+) -> dict[str, Any]:
     snapshot = snapshot_repository(target, subdirectory)
-    evidence = collect_universal_evidence(snapshot)
+    diagnostics = cache_diagnostics or CacheDiagnostics()
+    cache = EvidenceCache(cache_directory, snapshot, rule_fingerprint, diagnostics, runtime_signals_enabled)
+    evidence, runtime_diagnostics = collect_universal_evidence(snapshot, cache, runtime_signals_enabled)
     return {
-        "schema_version": 1,
+        "schema_version": EVIDENCE_SCHEMA_VERSION,
         "snapshot": {
             **asdict(snapshot),
             "files": [asdict(record) for record in snapshot.files],
         },
-        "evidence": [asdict(record) for record in evidence],
+        "evidence": [evidence_record_to_dict(record) for record in evidence],
+        "diagnostics": {"runtime_extraction": runtime_diagnostics},
     }
+
+
+def format_cache_diagnostics(diagnostics: CacheDiagnostics) -> str:
+    return (
+        f"cache: hit={diagnostics.hit} miss={diagnostics.miss} "
+        f"invalidated={diagnostics.invalidated} corrupted={diagnostics.corrupted} "
+        f"bypassed={diagnostics.bypassed}"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -745,13 +1233,55 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("target", type=Path, help="Local repository path to scan read-only")
     parser.add_argument("--subdirectory", default=".", help="Repository-relative analysis path")
     parser.add_argument("--output", type=Path, help="Write JSON to this path instead of stdout")
+    parser.add_argument("--inventory-output", type=Path, help="Write repository inventory JSON to this path")
+    parser.add_argument("--diagnostics", action="store_true", help="Print compact repository inventory diagnostics to stderr")
+    parser.add_argument(
+        "--cache-dir",
+        type=Path,
+        help="Use this disposable local directory for per-file evidence cache entries",
+    )
+    parser.add_argument("--no-cache", action="store_true", help="Bypass the per-file evidence cache")
+    parser.add_argument("--no-runtime-signals", action="store_true", help="Disable language runtime-signal extraction")
+    parser.add_argument(
+        "--rule-fingerprint",
+        default=RULE_FINGERPRINT,
+        help="Cache compatibility fingerprint for the active extraction rules",
+    )
     args = parser.parse_args(argv)
 
     try:
-        payload = scan_repository(args.target, args.subdirectory)
+        cache_diagnostics = CacheDiagnostics()
+        cache_directory = None if args.no_cache else (args.cache_dir or DEFAULT_CACHE_DIRECTORY)
+        payload = scan_repository(
+            args.target,
+            args.subdirectory,
+            cache_directory=cache_directory,
+            rule_fingerprint=args.rule_fingerprint,
+            cache_diagnostics=cache_diagnostics,
+            runtime_signals_enabled=not args.no_runtime_signals,
+        )
+        inventory_payload = None
+        if args.inventory_output or args.diagnostics:
+            repository_root, analysis_root, normalized_subdirectory = resolve_roots(args.target, args.subdirectory)
+            inventory_payload = build_inventory(
+                repository_root,
+                analysis_root,
+                normalized_subdirectory,
+                revision=payload["snapshot"]["revision"],
+            )
     except ValueError as error:
         print(str(error), file=sys.stderr)
         return 2
+
+    if args.inventory_output and inventory_payload is not None:
+        args.inventory_output.write_text(
+            json.dumps(inventory_payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    if args.diagnostics and inventory_payload is not None:
+        print(format_diagnostics(inventory_payload["summary"]), file=sys.stderr)
+    if args.diagnostics:
+        print(format_cache_diagnostics(cache_diagnostics), file=sys.stderr)
 
     rendered = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
     if args.output:
