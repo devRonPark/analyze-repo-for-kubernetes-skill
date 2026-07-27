@@ -159,10 +159,43 @@ class JavaRuntimeSignalExtractor:
         return RuntimeExtractionOutcome(signals)
 
 
+class GoRuntimeSignalExtractor:
+    language = "go"
+    name = "go_runtime_signals"
+    version = "1.0.0"
+
+    def extract(self, path: str, lines: list[str]) -> RuntimeExtractionOutcome:
+        if is_test_path(path):
+            return RuntimeExtractionOutcome([])
+        signals: list[RuntimeSignal] = []
+        for line_number, line in enumerate(lines, start=1):
+            for match in re.finditer(r"os\.Getenv\(\s*\"([A-Z][A-Z0-9_]*)\"", line):
+                if has_code_token(line, "os.Getenv"):
+                    signals.append(RuntimeSignal("runtime_config_read", line_number, {"language": self.language, "key": match.group(1)}))
+            if has_code_token(line, "sql.Open"):
+                key = re.search(r"os\.Getenv\(\s*\"([A-Z][A-Z0-9_]*)\"", line)
+                if key:
+                    signals.append(RuntimeSignal("runtime_outbound_connection", line_number, {"language": self.language, "mechanism": "sql", "config_key": key.group(1)}))
+            if has_code_token(line, "os.WriteFile"):
+                key = re.search(r"os\.Getenv\(\s*\"([A-Z][A-Z0-9_]*)\"", line)
+                if key:
+                    signals.append(RuntimeSignal("runtime_writable_path", line_number, {"language": self.language, "path_config_key": key.group(1)}))
+            if has_code_token(line, "http.ListenAndServe"):
+                address = re.search(r"http\.ListenAndServe\(\s*\"([^\"]+)\"", line)
+                if address:
+                    host, separator, port = address.group(1).rpartition(":")
+                    if separator and port.isdigit():
+                        signals.append(RuntimeSignal("runtime_listener", line_number, {"language": self.language, "host": host, "port": int(port)}))
+            if has_code_token(line, "cron.AddFunc"):
+                signals.append(RuntimeSignal("runtime_background_registration", line_number, {"language": self.language, "registration": "cron.AddFunc"}))
+        return RuntimeExtractionOutcome(signals)
+
+
 EXTRACTORS: dict[str, RuntimeSignalExtractor] = {
     "node": NodeRuntimeSignalExtractor(),
     "python": PythonRuntimeSignalExtractor(),
     "java": JavaRuntimeSignalExtractor(),
+    "go": GoRuntimeSignalExtractor(),
 }
 
 

@@ -421,6 +421,28 @@ class RepositoryEvidenceTests(unittest.TestCase):
         self.assertEqual({item["kind"] for item in runtime}, expected_kinds)
         self.assertTrue(all(item["data"]["language"] == "java" for item in runtime))
 
+    def test_go_runtime_signals_are_extracted_from_explicit_source_only(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            (repo / "main.go").write_text(
+                "url := os.Getenv(\"DATABASE_URL\")\n"
+                "db, _ := sql.Open(\"postgres\", os.Getenv(\"DATABASE_URL\"))\n"
+                "os.WriteFile(os.Getenv(\"DATA_PATH\"), body, 0644)\n"
+                "http.ListenAndServe(\"0.0.0.0:8300\", handler)\n"
+                "cron.AddFunc(\"@every 1m\", work)\n",
+                encoding="utf-8",
+            )
+            payload = self.run_collector(repo, "--no-cache")
+
+        expected_kinds = {
+            "runtime_config_read", "runtime_listener", "runtime_outbound_connection",
+            "runtime_writable_path", "runtime_background_registration",
+        }
+        runtime = [item for item in payload["evidence"] if item["kind"] in expected_kinds]
+        self.assertEqual({item["kind"] for item in runtime}, expected_kinds)
+        self.assertTrue(all(item["data"]["language"] == "go" for item in runtime))
+
     def test_per_file_cache_reuses_unchanged_evidence_and_matches_a_clean_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp) / "repo"
