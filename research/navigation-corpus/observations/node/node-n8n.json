@@ -1,0 +1,236 @@
+{
+  "schema_version": 1,
+  "corpus_id": "node-n8n",
+  "repository": "n8n-io/n8n",
+  "revision": "5a78ba7c29c73751f2241e7095d180f26c3436f9",
+  "language": "node",
+  "repository_shape": "production-monorepo-multi-process",
+  "analysis_scope": ".",
+  "workload_candidates": [
+    {
+      "id": "n8n-main",
+      "root": "packages/cli",
+      "role": "workflow-api-editor-main-process",
+      "status": "inferred",
+      "evidence": [
+        {"path": "packages/cli/bin/n8n", "line_start": 1, "line_end": 80}
+      ]
+    },
+    {
+      "id": "n8n-worker",
+      "root": "packages/cli",
+      "role": "queue-execution-worker",
+      "status": "unknown",
+      "evidence": []
+    }
+  ],
+  "navigation_steps": [
+    {
+      "order": 1,
+      "action": "seed",
+      "target": "docker/images/n8n/Dockerfile",
+      "reason": "The repository ships a production container image, so its Dockerfile is the strongest deployment seed.",
+      "result": "The runtime image copies the compiled n8n package, exposes TCP 5678, and delegates startup to docker-entrypoint.sh.",
+      "source": {"path": "docker/images/n8n/Dockerfile", "line_start": 1, "line_end": 37}
+    },
+    {
+      "order": 2,
+      "action": "follow",
+      "target": "docker/images/n8n/docker-entrypoint.sh",
+      "reason": "Docker ENTRYPOINT delegates the actual process selection to this script.",
+      "result": "The entrypoint must be followed before deciding the final executable and supported process modes. Source validation remains pending.",
+      "source": {"path": "docker/images/n8n/Dockerfile", "line_start": 24, "line_end": 32}
+    },
+    {
+      "order": 3,
+      "action": "follow",
+      "target": "packages/cli/bin/n8n",
+      "reason": "The image creates /usr/local/bin/n8n as a symlink to the CLI binary.",
+      "result": "The CLI binary is the executable boundary rather than the monorepo root package itself.",
+      "source": {"path": "docker/images/n8n/Dockerfile", "line_start": 23, "line_end": 27}
+    },
+    {
+      "order": 4,
+      "action": "read",
+      "target": "packages/cli/package.json",
+      "reason": "The CLI package defines the deployable package boundary, engine constraints, dependencies, and bin mapping.",
+      "result": "Treat packages/cli as a workload package and the root package.json as orchestration/build context. Commit-pinned line validation remains pending."
+    },
+    {
+      "order": 5,
+      "action": "search",
+      "target": "N8N_PORT, DB_TYPE, EXECUTIONS_MODE, QUEUE_BULL_REDIS_*, N8N_ENCRYPTION_KEY",
+      "reason": "These configuration families distinguish listener, persistence, queue worker, and secret requirements.",
+      "result": "Configuration discovery must fan out from the CLI config schema rather than scanning every TypeScript source file."
+    },
+    {
+      "order": 6,
+      "action": "stop",
+      "target": "initial workload boundary",
+      "reason": "The production image, exposed port, CLI binary, and persistent home path are identified; worker and database modes still require pinned source validation.",
+      "result": "Stop the first pass and schedule targeted reads for process modes and config schema."
+    }
+  ],
+  "file_decisions": [
+    {
+      "path": "docker/images/n8n/Dockerfile",
+      "decision": "required",
+      "roles": ["deployment", "runtime", "port", "storage"],
+      "reasons": ["Defines the production image", "Exposes port 5678", "Links the n8n executable", "Creates /home/node/.n8n"],
+      "line_ranges": [{"start": 1, "end": 37}]
+    },
+    {
+      "path": "docker/images/n8n/docker-entrypoint.sh",
+      "decision": "required",
+      "roles": ["entrypoint", "process-selection"],
+      "reasons": ["Dockerfile delegates startup to this script"]
+    },
+    {
+      "path": "packages/cli/bin/n8n",
+      "decision": "required",
+      "roles": ["entrypoint", "runtime", "command-dispatch"],
+      "reasons": ["Container executable symlink resolves to this path"]
+    },
+    {
+      "path": "packages/cli/package.json",
+      "decision": "required",
+      "roles": ["runtime", "dependency", "package-boundary"],
+      "reasons": ["Defines the deployable CLI package and engine constraints"]
+    },
+    {
+      "path": "package.json",
+      "decision": "supporting",
+      "roles": ["workspace", "build", "developer-orchestration"],
+      "reasons": ["Useful for workspace navigation but not sufficient as the runtime boundary"]
+    },
+    {
+      "path": "packages/nodes-base",
+      "decision": "rejected",
+      "roles": ["plugin-library"],
+      "reasons": ["Large integration catalog is not needed to establish the core workload boundary"]
+    }
+  ],
+  "relationship_edges": [
+    {
+      "from": "docker/images/n8n/Dockerfile",
+      "relation": "entrypoint",
+      "to": "docker/images/n8n/docker-entrypoint.sh",
+      "status": "resolved",
+      "source": {"path": "docker/images/n8n/Dockerfile", "line_start": 24, "line_end": 32}
+    },
+    {
+      "from": "docker/images/n8n/Dockerfile",
+      "relation": "symlink-executable",
+      "to": "packages/cli/bin/n8n",
+      "status": "resolved",
+      "source": {"path": "docker/images/n8n/Dockerfile", "line_start": 23, "line_end": 27}
+    },
+    {
+      "from": "packages/cli/bin/n8n",
+      "relation": "dispatches-command",
+      "to": "packages/cli/src/commands/*",
+      "status": "unresolved",
+      "source": {"path": "packages/cli/bin/n8n", "line_start": 1, "line_end": 80}
+    }
+  ],
+  "design_findings": [
+    {
+      "field": "workload",
+      "value": "packages/cli is the primary deployable workload package inside a larger production monorepo",
+      "status": "inferred",
+      "evidence": [
+        {"path": "docker/images/n8n/Dockerfile", "line_start": 18, "line_end": 32}
+      ]
+    },
+    {
+      "field": "entrypoint",
+      "value": "tini -> docker-entrypoint.sh -> n8n CLI",
+      "status": "confirmed",
+      "evidence": [
+        {"path": "docker/images/n8n/Dockerfile", "line_start": 23, "line_end": 32}
+      ]
+    },
+    {
+      "field": "port",
+      "value": 5678,
+      "status": "confirmed",
+      "evidence": [
+        {"path": "docker/images/n8n/Dockerfile", "line_start": 28, "line_end": 30}
+      ]
+    },
+    {
+      "field": "storage",
+      "value": "/home/node/.n8n is created as the runtime home/config state path",
+      "status": "confirmed",
+      "evidence": [
+        {"path": "docker/images/n8n/Dockerfile", "line_start": 23, "line_end": 27}
+      ]
+    },
+    {
+      "field": "external_dependency",
+      "value": "database and queue dependencies vary by execution mode",
+      "status": "unknown",
+      "evidence": []
+    }
+  ],
+  "scanner_misses": [
+    {
+      "kind": "relationship-miss",
+      "description": "A flat source scan may find many packages but miss that the production Dockerfile symlink identifies packages/cli/bin/n8n as the executable boundary."
+    },
+    {
+      "kind": "workload-cardinality-miss",
+      "description": "Treating n8n as one HTTP process would miss queue worker and other command modes exposed by the CLI."
+    },
+    {
+      "kind": "scope-noise",
+      "description": "Scanning packages/nodes-base deeply before resolving the CLI boundary would consume substantial context without improving Kubernetes workload discovery."
+    }
+  ],
+  "rule_candidates": [
+    {
+      "scope": "universal",
+      "kind": "seed",
+      "condition": {"production_container_definition": true},
+      "action": {"read_first": "container definition", "then_follow": ["ENTRYPOINT", "CMD", "symlinked executable"]},
+      "support": "n8n production Dockerfile directly reveals port, home path, entrypoint script, and CLI executable.",
+      "counterexample": null
+    },
+    {
+      "scope": "repository_shape",
+      "kind": "follow",
+      "condition": {"shape": "production-monorepo", "container_executable_points_to_subpackage": true},
+      "action": {"promote_subpackage": "workload candidate", "demote_root_manifest": "supporting workspace context"},
+      "support": "n8n root is a monorepo, while the image resolves the executable into packages/cli.",
+      "counterexample": "Framework repositories such as nestjs/nest may contain runnable samples without shipping the root as a production application."
+    },
+    {
+      "scope": "language",
+      "kind": "exclude",
+      "condition": {"node_monorepo": true, "package_role": "plugin-or-integration-catalog"},
+      "action": {"defer_deep_scan_until": "core workload and command modes are resolved"},
+      "support": "n8n nodes-base is large but not required to identify the main server process.",
+      "counterexample": "A custom-node-only deployment analysis may explicitly require the package."
+    },
+    {
+      "scope": "universal",
+      "kind": "stop",
+      "condition": {"container_entrypoint_resolved": true, "listener_port_known": true, "state_path_known": true, "process_modes_partially_unknown": true},
+      "action": {"stop_broad_scan": true, "schedule_targeted_reads": ["CLI command registry", "configuration schema", "worker mode"]},
+      "support": "The broad pass already identifies the primary Kubernetes design boundary without scanning all integrations.",
+      "counterexample": null
+    }
+  ],
+  "stop_decision": {
+    "stopped": true,
+    "reason": "The production image establishes the primary runtime boundary. Remaining uncertainty is narrow and should be resolved with targeted CLI/config reads, not a repository-wide scan.",
+    "known_fields": ["workload", "entrypoint", "port", "storage"],
+    "unknown_fields": ["worker process command", "database mode", "queue dependency", "configuration source lines"]
+  },
+  "review": {
+    "status": "draft",
+    "reviewer": "OpenAI",
+    "reviewed_at": "2026-07-27T10:00:00+09:00",
+    "notes": "Commit is pinned. Dockerfile evidence was inspected through indexed GitHub search, but commit-specific file retrieval was unavailable in the execution environment. Validate all source lines against the pinned checkout before promotion to reviewed."
+  }
+}
