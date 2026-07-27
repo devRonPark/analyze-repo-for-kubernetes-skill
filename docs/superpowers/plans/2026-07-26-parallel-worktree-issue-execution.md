@@ -16,9 +16,11 @@
 - Do not mix unrelated issues on one branch.
 - Preserve read-only repository analysis behavior, evidence traceability, deterministic output, secret redaction, and report validation contracts.
 - Do not generate Kubernetes manifests, edit Helm charts, troubleshoot live clusters, or change application repositories from this skill repository.
-- Current issue snapshot date: 2026-07-26.
+- Current issue snapshot date: 2026-07-27.
 - Closed issues `#21` and `#24` are merged through PR `#32`.
 - Closed issues `#22` and `#23` are not planned; when open eval issues mention them, reconcile that dependency against the current report validator and the normalization/report model introduced by `#27`.
+- Completed after this plan was drafted: `#26` through PR `#40`, `#27` through PR `#41`, `#33` through PR `#42`, `#28` through PR `#43`, and `#34` through PR `#44`.
+- Current next runnable issues: `#29`, `#30`, and `#35`. `#30` may start because `#28` is merged. `#35` may start because `#34` is merged.
 
 ---
 
@@ -116,28 +118,28 @@ Use a non-closing reference unless the PR is intended to close the issue on merg
 
 ## Merge Queue Rules
 
-- [ ] Merge `#26` before any behavior-changing `SKILL.md` refactor.
-- [ ] Merge `#27` before `#33` is merged, even if `#33` is developed in parallel.
-- [ ] Merge `#33` before `#34`, `#35`, `#36`, `#37`, or `#38`.
-- [ ] Merge `#34` before `#35` and `#36`.
+- [x] Merge `#26` before any behavior-changing `SKILL.md` refactor.
+- [x] Merge `#27` before `#33` is merged, even if `#33` is developed in parallel.
+- [x] Merge `#33` before `#34`, `#35`, `#36`, `#37`, or `#38`.
+- [x] Merge `#34` before `#35` and `#36`.
 - [ ] Merge `#35` before `#36` and `#37`.
 - [ ] Merge `#36` before `#37`.
 - [ ] Merge `#37` before `#38`.
-- [ ] Merge `#28` before `#30`.
+- [x] Merge `#28` before `#30`.
 - [ ] Merge `#31` last, after `#26`, `#27`, `#28`, and the evidence/graph pipeline contracts are stable.
 
 ## Parallel Wave Map
 
 | Wave | Session | Issue | Branch | Worktree | Merge gate |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Eval Foundation | `#26` | `issue/26-trigger-precision-eval` | `/tmp/analyze-repo-for-kubernetes-skill-worktrees/issue-26-trigger-precision-eval` | none |
-| 1 | Evidence Schema | `#33` | `issue/33-evidence-schema-validation` | `/tmp/analyze-repo-for-kubernetes-skill-worktrees/issue-33-evidence-schema-validation` | merge after `#27` |
-| 2 | Eval Baseline | `#27` | `issue/27-real-repository-run-eval` | `/tmp/analyze-repo-for-kubernetes-skill-worktrees/issue-27-real-repository-run-eval` | merge after `#26` |
-| 3 | Quality Eval | `#28` | `issue/28-skill-on-off-quality-eval` | `/tmp/analyze-repo-for-kubernetes-skill-worktrees/issue-28-skill-on-off-quality-eval` | merge after `#27` |
-| 3 | Inventory | `#34` | `issue/34-repository-inventory-diagnostics` | `/tmp/analyze-repo-for-kubernetes-skill-worktrees/issue-34-repository-inventory-diagnostics` | merge after `#33` |
-| 4 | Semantic Eval | `#29` | `issue/29-citation-entailment-grading` | `/tmp/analyze-repo-for-kubernetes-skill-worktrees/issue-29-citation-entailment-grading` | merge after `#27`; prefer after `#28` |
-| 4 | Efficiency Eval | `#30` | `issue/30-efficiency-intake-friction-eval` | `/tmp/analyze-repo-for-kubernetes-skill-worktrees/issue-30-efficiency-intake-friction-eval` | merge after `#28` |
-| 4 | Cache | `#35` | `issue/35-evidence-cache-reuse` | `/tmp/analyze-repo-for-kubernetes-skill-worktrees/issue-35-evidence-cache-reuse` | merge after `#34` |
+| 1 | Eval Foundation | `#26` | `issue/26-trigger-precision-eval` | `/tmp/analyze-repo-for-kubernetes-skill-worktrees/issue-26-trigger-precision-eval` | merged via PR `#40` |
+| 1 | Evidence Schema | `#33` | `issue/33-evidence-schema-validation` | `/tmp/analyze-repo-for-kubernetes-skill-worktrees/issue-33-evidence-schema-validation` | merged via PR `#42` |
+| 2 | Eval Baseline | `#27` | `issue/27-real-repository-run-eval` | `/tmp/analyze-repo-for-kubernetes-skill-worktrees/issue-27-real-repository-run-eval` | merged via PR `#41` |
+| 3 | Quality Eval | `#28` | `issue/28-skill-on-off-quality-eval` | `/tmp/analyze-repo-for-kubernetes-skill-worktrees/issue-28-skill-on-off-quality-eval` | merged via PR `#43` |
+| 3 | Inventory | `#34` | `issue/34-repository-inventory-diagnostics` | `/tmp/analyze-repo-for-kubernetes-skill-worktrees/issue-34-repository-inventory-diagnostics` | merged via PR `#44` |
+| 4 | Semantic Eval | `#29` | `issue/29-citation-entailment-grading` | `/tmp/analyze-repo-for-kubernetes-skill-worktrees/issue-29-citation-entailment-grading` | ready; `#27` and `#28` merged |
+| 4 | Efficiency Eval | `#30` | `issue/30-efficiency-intake-friction-eval` | `/tmp/analyze-repo-for-kubernetes-skill-worktrees/issue-30-efficiency-intake-friction-eval` | ready; `#28` merged |
+| 4 | Cache | `#35` | `issue/35-evidence-cache-reuse` | `/tmp/analyze-repo-for-kubernetes-skill-worktrees/issue-35-evidence-cache-reuse` | ready; `#34` merged |
 | 5 | Runtime Signals | `#36` | `issue/36-runtime-signal-extraction` | `/tmp/analyze-repo-for-kubernetes-skill-worktrees/issue-36-runtime-signal-extraction` | merge after `#35` |
 | 6 | Evidence Graph | `#37` | `issue/37-incremental-evidence-graph` | `/tmp/analyze-repo-for-kubernetes-skill-worktrees/issue-37-incremental-evidence-graph` | merge after `#36` |
 | 7 | Graph Query | `#38` | `issue/38-graph-query-packets` | `/tmp/analyze-repo-for-kubernetes-skill-worktrees/issue-38-graph-query-packets` | merge after `#37` |
