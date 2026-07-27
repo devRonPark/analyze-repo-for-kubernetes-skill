@@ -129,9 +129,40 @@ class PythonRuntimeSignalExtractor:
         return RuntimeExtractionOutcome(signals)
 
 
+class JavaRuntimeSignalExtractor:
+    language = "java"
+    name = "java_runtime_signals"
+    version = "1.0.0"
+
+    def extract(self, path: str, lines: list[str]) -> RuntimeExtractionOutcome:
+        if is_test_path(path):
+            return RuntimeExtractionOutcome([])
+        signals: list[RuntimeSignal] = []
+        for line_number, line in enumerate(lines, start=1):
+            for match in re.finditer(r"System\.getenv\(\s*\"([A-Z][A-Z0-9_]*)\"", line):
+                if has_code_token(line, "System.getenv"):
+                    signals.append(RuntimeSignal("runtime_config_read", line_number, {"language": self.language, "key": match.group(1)}))
+            if has_code_token(line, "DriverManager.getConnection"):
+                key = re.search(r"System\.getenv\(\s*\"([A-Z][A-Z0-9_]*)\"", line)
+                if key:
+                    signals.append(RuntimeSignal("runtime_outbound_connection", line_number, {"language": self.language, "mechanism": "jdbc", "config_key": key.group(1)}))
+            if has_code_token(line, "Files.write"):
+                key = re.search(r"System\.getenv\(\s*\"([A-Z][A-Z0-9_]*)\"", line)
+                if key:
+                    signals.append(RuntimeSignal("runtime_writable_path", line_number, {"language": self.language, "path_config_key": key.group(1)}))
+            if has_code_token(line, "HttpServer.create"):
+                listener = re.search(r"InetSocketAddress\(\s*\"([^\"]+)\"\s*,\s*(\d{1,5})", line)
+                if listener:
+                    signals.append(RuntimeSignal("runtime_listener", line_number, {"language": self.language, "host": listener.group(1), "port": int(listener.group(2))}))
+            if has_code_token(line, "@Scheduled"):
+                signals.append(RuntimeSignal("runtime_background_registration", line_number, {"language": self.language, "registration": "Scheduled"}))
+        return RuntimeExtractionOutcome(signals)
+
+
 EXTRACTORS: dict[str, RuntimeSignalExtractor] = {
     "node": NodeRuntimeSignalExtractor(),
     "python": PythonRuntimeSignalExtractor(),
+    "java": JavaRuntimeSignalExtractor(),
 }
 
 
