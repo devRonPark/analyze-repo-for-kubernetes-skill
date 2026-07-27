@@ -186,6 +186,12 @@ python3 scripts/validate_skill.py .
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
+8개의 pinned 공개 OSS 저장소를 실제로 clone하여 repository root 전체를 정적 분석하는 통합 테스트는 네트워크를 사용하므로 기본 CI에서는 건너뜁니다. source·dependency·build는 실행하지 않으며, 필요할 때만 명시적으로 실행합니다.
+
+```bash
+RUN_OSS_REPOSITORY_E2E=1 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest tests.test_oss_repository_runs -v
+```
+
 ```bash
 python3 scripts/validate_regression.py tests/fixtures/regression/expected.json
 ```

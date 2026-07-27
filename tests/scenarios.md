@@ -228,6 +228,17 @@ Expected behavior:
 - manifest가 선언한 언어와 positive runtime evidence는 결과에서 확인된다
 - 검증 범위는 분석 완료와 선언된 signal에 한정하며, 다섯 runtime family의 포괄성은 extractor unit test에서 검증한다
 
+## Scenario 12 — pinned OSS 전체 저장소에서 opt-in repository-run 분석이 완료되는 경우
+
+`RUN_OSS_REPOSITORY_E2E=1`인 경우 manifest에 등록된 여덟 upstream을 각 pinned SHA로 temporary directory에 clone한 뒤, repository root 전체에서 `repository_evidence.py --no-cache`를 실행한다.
+
+Expected behavior:
+
+- upstream application, dependency, build 또는 import를 실행하지 않고 Git checkout과 정적 evidence collection만 수행한다
+- 각 snapshot revision은 manifest commit과 같고 upstream source path가 snapshot에 포함된다
+- validator, source span, declared positive runtime evidence 계약을 통과한다
+- 네트워크를 사용하므로 환경 변수가 없을 때 기본 unittest와 CI에서 skip한다
+
 ## Regression Fixture Procedure
 
 When a rule changes, keep the legacy repeated-output fixture in `tests/fixtures/regression/expected.json` limited to fixture-schema validation. For black-box regression, run the skill or an explicitly captured report against `tests/fixtures/black_box_repo`, validate the Markdown report with `scripts/validate_report.py`, normalize it with `scripts/normalize_report.py`, and compare it to `tests/fixtures/regression/black_box_expected.json`. The normalized comparison permits no differences in deployment candidates, dependencies, excluded items, repository launch definitions, operating-environment baseline evidence or design-input verdict. Closed/not-planned dependencies `#22` and `#23` are reconciled through the current `validate_report.py` contract and the normalized report model.
