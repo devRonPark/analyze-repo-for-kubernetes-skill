@@ -205,13 +205,18 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
         "validation": {
             "command": [
                 "python3",
+                str(ROOT / "scripts" / "validate_target_report.py"),
+                str(workspace / "target.json"),
+            ],
+            "report_command": [
+                "python3",
                 str(ROOT / "scripts" / "validate_report.py"),
                 str(report_path),
                 "--mode",
                 args.mode,
                 "--repo-root",
                 str(repository_root.resolve(strict=True)),
-            ]
+            ],
         },
     }
     atomic_write_json(workspace / "target.json", payload)
