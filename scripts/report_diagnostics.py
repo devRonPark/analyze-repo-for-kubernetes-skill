@@ -106,11 +106,6 @@ def from_message(message: str) -> Diagnostic:
     return Diagnostic(code, "", "", "", message)
 
 
-EVIDENCE_REFERENCE = re.compile(
-    r"(?<![0-9A-Za-z_.-])(?P<reference>[0-9A-Za-z_./-]+:[1-9]\d*)"
-)
-
-
 def resolve_document_diagnostics(
     diagnostics: tuple[Diagnostic, ...],
     document: report_records.ReportDocument,
@@ -161,14 +156,13 @@ def resolve_document_diagnostics(
                     field=field,
                 )
 
-        references = {
-            match.group("reference")
-            for match in EVIDENCE_REFERENCE.finditer(item.message)
-        }
-        if references and not item.section_key:
+        if not item.section_key:
             record_matches: list[Diagnostic] = []
             for claim in document.claims:
-                if references.intersection(claim.evidence):
+                if any(
+                    reference in item.message
+                    for reference in claim.evidence
+                ):
                     record_matches.append(
                         replace(
                             item,
@@ -180,7 +174,10 @@ def resolve_document_diagnostics(
                         )
                     )
             for relationship in document.relationships:
-                if references.intersection(relationship.evidence):
+                if any(
+                    reference in item.message
+                    for reference in relationship.evidence
+                ):
                     record_matches.append(
                         replace(
                             item,

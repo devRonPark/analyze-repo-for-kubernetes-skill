@@ -262,6 +262,7 @@ class RepairUnitMappingTests(unittest.TestCase):
         self.assertEqual(resolved[0].field, "startup_command")
 
     def test_document_resolver_expands_shared_evidence_to_affected_records(self):
+        shared_reference = "src/@scope/pkg+[x].yaml:7"
         document = report_records.ReportDocument(
             mode="summary",
             subjects=(
@@ -280,7 +281,7 @@ class RepairUnitMappingTests(unittest.TestCase):
                     "startup_command",
                     "run",
                     "confirmed",
-                    ("compose.yml:7",),
+                    (shared_reference,),
                     "",
                 ),
             ),
@@ -291,7 +292,7 @@ class RepairUnitMappingTests(unittest.TestCase):
                     "dependency:db",
                     (("mechanism", "TCP"),),
                     "confirmed",
-                    ("compose.yml:7",),
+                    (shared_reference,),
                     "",
                 ),
             ),
@@ -306,7 +307,7 @@ class RepairUnitMappingTests(unittest.TestCase):
                     "",
                     (
                         "인용 줄 범위가 파일 범위를 벗어났습니다: "
-                        "compose.yml:7"
+                        f"{shared_reference}"
                     ),
                 ),
             ),
