@@ -40,6 +40,30 @@ class ReportContractTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "renderer"):
                 report_contract.load_report_contract(path)
 
+    def test_loader_rejects_missing_required_field_group(self):
+        payload = json.loads(
+            report_contract.DEFAULT_CONTRACT_PATH.read_text(encoding="utf-8")
+        )
+        del payload["field_groups"]["readiness"]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "invalid-report-contract.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "readiness"):
+                report_contract.load_report_contract(path)
+
+    def test_loader_rejects_duplicate_field_id(self):
+        payload = json.loads(
+            report_contract.DEFAULT_CONTRACT_PATH.read_text(encoding="utf-8")
+        )
+        payload["field_groups"]["scope"][1]["field_id"] = "target_type"
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "invalid-report-contract.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "중복 field ID"):
+                report_contract.load_report_contract(path)
+
     def test_new_summary_contract_has_the_expected_title_and_ordered_headings(self):
         contract = report_contract.load_report_contract()
 

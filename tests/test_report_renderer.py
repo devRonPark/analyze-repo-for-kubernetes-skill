@@ -55,6 +55,18 @@ class ReportRendererTests(unittest.TestCase):
         self.assertIn("/ 판단: build plugin으로 추론", rendered)
         self.assertEqual(rendered.count("- 판정: "), 1)
 
+    def test_renderer_has_exact_korean_labels_for_every_record_status(self):
+        self.assertEqual(
+            report_renderer.STATUS_LABELS,
+            {
+                "confirmed": "확인됨",
+                "inferred": "추정됨",
+                "unknown": "미확인",
+                "conflicted": "상충됨",
+                "not_applicable": "해당 없음",
+            },
+        )
+
     def test_detailed_render_has_matrix_graph_and_detailed_only_sections(self):
         rendered = report_renderer.render_report(
             load_fixture("jpetstore-detailed.json"), self.contract
