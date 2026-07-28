@@ -57,6 +57,16 @@ Use repository-relative inline code `path/to/file:line` or `path/to/file:start-e
 
 ## Report
 
+For **structured report mode**, complete evidence triage and create an immutable analysis snapshot before report generation. The analysis completion handoff must contain `target_ref`, `target_sha256`, `analysis_snapshot_id`, and `idempotency_key`.
+
+Run report generation in a compact report sub-session, separate from the analysis conversation. Follow [qwen-structured-report-mode.md](references/qwen-structured-report-mode.md) exactly. In this mode, the only permitted lifecycle tools are `report_session_start`, `report_chunk_submit`, `report_session_sync`, and `report_session_finalize`; do not directly write a report, template, or final Markdown body.
+
+Do not configure a `<thought>` stop sequence; report-mode control depends on complete lifecycle Tool Calls.
+
+When the lifecycle backend reports completion, return only artifact path, SHA-256, byte size, validation status. Do not return the Markdown report body.
+
+Outside structured report mode, retain the legacy report workflow below.
+
 Read exactly one selected report template, staged as `report.md`:
 
 - summary contract: [migration-summary-template.md](assets/migration-summary-template.md)

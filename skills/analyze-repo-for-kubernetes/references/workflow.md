@@ -100,3 +100,17 @@ Completion Gate에서 다음을 확인한다.
 - 보고서가 `설계 입력 충분`, `추가 정보 필요`, `분석 불가` 중 하나의 Kubernetes 설계 입력 상태로 끝난다.
 
 `추가 정보 필요` 판정은 검증된 설계 차단 항목의 범주와 영향 범위를 포함해야 한다.
+
+## 13. Structured report mode routing
+
+Structured report mode는 evidence triage가 완료되고 immutable analysis snapshot이 생성된 뒤에만 시작한다. analysis completion handoff에는 `target_ref`, `target_sha256`, `analysis_snapshot_id`, `idempotency_key`가 반드시 포함되어야 한다.
+
+보고서 단계는 분석 대화와 분리된 compact report sub-session으로 실행한다. 이 모드에서는 [qwen-structured-report-mode.md](qwen-structured-report-mode.md)를 최상위 지시문으로 적용하고, report lifecycle server가 제공하는 only four lifecycle tools만 사용한다: `report_session_start`, `report_chunk_submit`, `report_session_sync`, `report_session_finalize`.
+
+모델은 backend가 제공한 `next_action`에 대응하는 도구 하나만 호출한다. lease, state version, required field, continuation, retry와 repair는 해당 지시문에 따른다. 모델은 report 파일, template 또는 Markdown 본문을 직접 읽거나 수정하거나 생성하지 않으며, lifecycle backend가 canonical artifact 생성과 validation을 소유한다.
+
+`<thought>` stop sequence는 사용하지 않는다. stream 종료와 단일 lifecycle Tool Call의 완전성을 확인한 뒤에만 backend로 전달한다.
+
+backend가 `COMPLETE`를 반환하면 최종 응답은 artifact path, SHA-256, byte size, validation status만 포함한다. Markdown 보고서 본문은 모델 응답으로 반환하지 않는다.
+
+Outside structured report mode, 기존 template 선택, staged `report.md` 검증, 전체 보고서 반환 규칙을 유지한다.

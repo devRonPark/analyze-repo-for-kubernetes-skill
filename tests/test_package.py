@@ -339,6 +339,55 @@ class SkillPackageTests(unittest.TestCase):
         self.assertIn("<plugin-root>/scripts/prepare_analysis_target.py", skill)
         self.assertIn("두 단계 상위", skill)
 
+    def test_structured_report_mode_routes_analysis_to_lifecycle_tools(self):
+        """Removing the report-mode boundary would let the model write Markdown directly."""
+        report_mode = (
+            SKILL_ROOT / "references/qwen-structured-report-mode.md"
+        )
+        self.assertTrue(report_mode.is_file())
+
+        skill = PLUGIN_SKILL.read_text(encoding="utf-8")
+        workflow = (SKILL_ROOT / "references/workflow.md").read_text(
+            encoding="utf-8"
+        )
+        directive = report_mode.read_text(encoding="utf-8")
+
+        self.assertIn("structured report mode", skill)
+        self.assertIn("compact report sub-session", skill)
+        self.assertIn("Do not configure a `<thought>` stop sequence", skill)
+        self.assertIn("target_ref", skill)
+        self.assertIn("target_sha256", skill)
+        self.assertIn("analysis_snapshot_id", skill)
+        self.assertIn("idempotency_key", skill)
+        for lifecycle_tool in (
+            "report_session_start",
+            "report_chunk_submit",
+            "report_session_sync",
+            "report_session_finalize",
+        ):
+            self.assertIn(lifecycle_tool, skill)
+        self.assertIn("artifact path, SHA-256, byte size, validation status", skill)
+        self.assertIn("Outside structured report mode", skill)
+
+        self.assertIn("analysis completion handoff", workflow)
+        self.assertIn("compact report sub-session", workflow)
+        self.assertIn("only four lifecycle tools", workflow)
+
+        for forbidden_action in (
+            "write_file, append_file, edit, shell 또는 임의 파일 도구를 호출하지 마라.",
+            "report.md 또는 다른 보고서 파일을 직접 읽거나 수정하지 마라.",
+            "완성된 Markdown 보고서 전체를 모델 응답으로 다시 생성하거나 복사하지 마라.",
+        ):
+            self.assertIn(forbidden_action, directive)
+
+        for lifecycle_tool in (
+            "report_session_start",
+            "report_chunk_submit",
+            "report_session_sync",
+            "report_session_finalize",
+        ):
+            self.assertIn(lifecycle_tool, directive)
+
     def test_github_actions_runs_cli_independent_core_suite(self):
         workflow = (ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
         self.assertIn(
