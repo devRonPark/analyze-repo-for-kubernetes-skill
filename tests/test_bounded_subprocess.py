@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import time
 import unittest
 
 
@@ -42,6 +43,27 @@ class BoundedSubprocessTests(unittest.TestCase):
 
         self.assertTrue(result.timed_out)
         self.assertFalse(result.output_exceeded)
+
+    def test_timeout_kills_descendant_holding_output_pipe(self):
+        started = time.monotonic()
+
+        result = bounded_subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import subprocess,sys,time;"
+                    "subprocess.Popen([sys.executable,'-c',"
+                    "'import time; time.sleep(10)']);"
+                    "time.sleep(10)"
+                ),
+            ],
+            timeout=0.05,
+            max_output_bytes=1024,
+        )
+
+        self.assertTrue(result.timed_out)
+        self.assertLess(time.monotonic() - started, 1.0)
 
 
 if __name__ == "__main__":

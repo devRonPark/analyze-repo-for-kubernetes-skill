@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
+import signal
 import subprocess
 import threading
 import time
@@ -32,6 +34,7 @@ def run(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         shell=False,
+        start_new_session=True,
     )
     output_exceeded = threading.Event()
     lock = threading.Lock()
@@ -71,17 +74,26 @@ def run(
 
     deadline = time.monotonic() + timeout
     timed_out = False
+
+    def stop_process_group() -> None:
+        if process.poll() is not None:
+            return
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except (AttributeError, OSError):
+            process.kill()
+
     while process.poll() is None:
         if output_exceeded.wait(timeout=0.01):
-            process.kill()
+            stop_process_group()
             break
         if time.monotonic() >= deadline:
             timed_out = True
-            process.kill()
+            stop_process_group()
             break
     returncode = process.wait()
     for reader in readers:
-        reader.join()
+        reader.join(timeout=0.5)
     process.stdout.close()
     process.stderr.close()
 

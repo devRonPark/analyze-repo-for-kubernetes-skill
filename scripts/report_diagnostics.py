@@ -24,6 +24,11 @@ COMPONENT_FIELD = re.compile(
     r"(?:필수 속성이 없습니다|최소 초안 값 또는 최소 입력 누락이 없습니다): "
     r"(?P<label>.+)$"
 )
+COMPONENT_PROPERTY = re.compile(
+    r"^### (?:배포 대상|구성 요소):\s*(?P<subject>.+?)의 속성 "
+    r"(?:근거에 .+?이 없습니다|이 .+? 형식이 아닙니다): "
+    r"- (?P<label>[^:]+):"
+)
 MISSING_SECTION = re.compile(r"^섹션이 없습니다:\s*(?P<heading>.+)$")
 
 
@@ -139,6 +144,23 @@ def resolve_document_diagnostics(
             if len(matches) == 1:
                 item = replace(item, subject_id=matches[0])
 
+        component_property = COMPONENT_PROPERTY.match(item.message)
+        if component_property is not None:
+            matches = subjects_by_display.get(
+                component_property.group("subject"), []
+            )
+            group, field = _field_lookup().get(
+                component_property.group("label"),
+                ("", ""),
+            )
+            if len(matches) == 1 and group and field:
+                item = replace(
+                    item,
+                    section_key=group,
+                    subject_id=matches[0],
+                    field=field,
+                )
+
         references = {
             match.group("reference")
             for match in EVIDENCE_REFERENCE.finditer(item.message)
@@ -166,7 +188,18 @@ def resolve_document_diagnostics(
                             subject_id=relationship.edge_id,
                         )
                     )
-            if len(record_matches) == 1:
-                item = record_matches[0]
+            if record_matches:
+                unique = {
+                    (
+                        match.section_key,
+                        match.subject_id,
+                        match.field,
+                    ): match
+                    for match in record_matches
+                }
+                resolved.extend(
+                    unique[key] for key in sorted(unique)
+                )
+                continue
         resolved.append(item)
     return tuple(resolved)

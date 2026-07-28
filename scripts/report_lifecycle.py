@@ -120,11 +120,11 @@ class ReportLifecycle:
                 "canonical report path가 target workspace 밖을 가리킵니다"
             ) from error
         self.journal_path = (
-            self.canonical_path.parent
+            self.workspace
             / ".report-session/finalize-journal.json"
         )
         self.lock_path = (
-            self.canonical_path.parent
+            self.workspace
             / ".report-session/finalize.lock"
         )
 
@@ -150,6 +150,18 @@ class ReportLifecycle:
         if actual != expected:
             return "target hash mismatch"
         return None
+
+    def _journal_path(
+        self, journal: Mapping[str, object], key: str
+    ) -> Path:
+        path = Path(str(journal[key])).expanduser().resolve(strict=False)
+        try:
+            path.relative_to(self.workspace)
+        except ValueError as error:
+            raise RuntimeError(
+                f"finalize journal {key}가 workspace 밖을 가리킵니다"
+            ) from error
+        return path
 
     def candidate_path(self, session_id: str) -> Path:
         return self.canonical_path.parent / (
@@ -331,10 +343,15 @@ class ReportLifecycle:
             raise RuntimeError(
                 "현재 session의 validation failure journal이 아닙니다"
             )
-        Path(str(journal["candidate_path"])).unlink(missing_ok=True)
-        Path(str(journal["previous_path"])).unlink(missing_ok=True)
+        canonical = self._journal_path(journal, "canonical_path")
+        self._journal_path(journal, "candidate_path").unlink(
+            missing_ok=True
+        )
+        self._journal_path(journal, "previous_path").unlink(
+            missing_ok=True
+        )
         self.journal_path.unlink(missing_ok=True)
-        _fsync_directory(self.canonical_path.parent)
+        _fsync_directory(canonical.parent)
 
     def _candidate_diagnostics(
         self,
@@ -420,33 +437,47 @@ class ReportLifecycle:
         return completed.returncode == 0
 
     def _rollback(
-        self, previous: Path, *, had_canonical: bool
+        self,
+        canonical: Path,
+        previous: Path,
+        *,
+        had_canonical: bool,
     ) -> None:
         if previous.exists() or previous.is_symlink():
-            if self.canonical_path.exists() or self.canonical_path.is_symlink():
-                self.canonical_path.unlink()
-            os.replace(previous, self.canonical_path)
-            _fsync_directory(self.canonical_path.parent)
+            if canonical.exists() or canonical.is_symlink():
+                canonical.unlink()
+            os.replace(previous, canonical)
+            _fsync_directory(canonical.parent)
         elif (
             not had_canonical
             and (
-                self.canonical_path.exists()
-                or self.canonical_path.is_symlink()
+                canonical.exists()
+                or canonical.is_symlink()
             )
         ):
-            self.canonical_path.unlink()
-            _fsync_directory(self.canonical_path.parent)
+            canonical.unlink()
+            _fsync_directory(canonical.parent)
 
     def _terminal_failure(
         self,
         journal: dict[str, object],
         message: str,
     ) -> ToolResult:
+        if journal.get("phase") != "terminal_failure_pending":
+            journal = self._journal(
+                journal,
+                "terminal_failure_pending",
+                terminal_message=message,
+            )
+        else:
+            message = str(journal.get("terminal_message", message))
         session_id = str(journal["session_id"])
         idempotency_key = str(journal["idempotency_key"])
-        candidate = Path(str(journal["candidate_path"]))
-        previous = Path(str(journal["previous_path"]))
+        canonical = self._journal_path(journal, "canonical_path")
+        candidate = self._journal_path(journal, "candidate_path")
+        previous = self._journal_path(journal, "previous_path")
         self._rollback(
+            canonical,
             previous,
             had_canonical=bool(journal.get("had_canonical", False)),
         )
@@ -510,9 +541,10 @@ class ReportLifecycle:
     ) -> ToolResult:
         session_id = str(journal["session_id"])
         idempotency_key = str(journal["idempotency_key"])
-        content = self.canonical_path.read_bytes()
+        canonical = self._journal_path(journal, "canonical_path")
+        content = canonical.read_bytes()
         artifact = {
-            "path": str(self.canonical_path),
+            "path": str(canonical),
             "sha256": sha256(content).hexdigest(),
             "byte_size": len(content),
             "validation": "passed",
@@ -567,9 +599,16 @@ class ReportLifecycle:
         self, journal: dict[str, object]
     ) -> ToolResult:
         session_id = str(journal["session_id"])
-        candidate = Path(str(journal["candidate_path"]))
-        previous = Path(str(journal["previous_path"]))
+        canonical = self._journal_path(journal, "canonical_path")
+        candidate = self._journal_path(journal, "candidate_path")
+        previous = self._journal_path(journal, "previous_path")
         phase = str(journal["phase"])
+
+        if phase == "terminal_failure_pending":
+            return self._terminal_failure(
+                journal,
+                str(journal.get("terminal_message", "finalize failed")),
+            )
 
         if phase == "begin_pending":
             begun = self._begin(
@@ -627,19 +666,19 @@ class ReportLifecycle:
 
         if phase == "swap_pending":
             if (
-                self.canonical_path.exists()
-                or self.canonical_path.is_symlink()
+                canonical.exists()
+                or canonical.is_symlink()
             ) and not (previous.exists() or previous.is_symlink()):
-                os.replace(self.canonical_path, previous)
-                _fsync_directory(self.canonical_path.parent)
+                os.replace(canonical, previous)
+                _fsync_directory(canonical.parent)
             journal = self._journal(journal, "backup_ready")
             phase = "backup_ready"
 
         if phase == "backup_ready":
             if candidate.exists():
-                os.replace(candidate, self.canonical_path)
-                _fsync_directory(self.canonical_path.parent)
-            elif not self.canonical_path.exists():
+                os.replace(candidate, canonical)
+                _fsync_directory(canonical.parent)
+            elif not canonical.exists():
                 return self._terminal_failure(
                     journal, "candidate artifact가 없습니다"
                 )
@@ -661,7 +700,7 @@ class ReportLifecycle:
             previous.unlink(missing_ok=True)
             candidate.unlink(missing_ok=True)
             self.journal_path.unlink(missing_ok=True)
-            _fsync_directory(self.canonical_path.parent)
+            _fsync_directory(canonical.parent)
             return result
 
         if phase == "validation_failed":
@@ -680,8 +719,12 @@ class ReportLifecycle:
             or journal.get("idempotency_key") != idempotency_key
         ):
             return
-        Path(str(journal["candidate_path"])).unlink(missing_ok=True)
-        Path(str(journal["previous_path"])).unlink(missing_ok=True)
+        self._journal_path(journal, "candidate_path").unlink(
+            missing_ok=True
+        )
+        self._journal_path(journal, "previous_path").unlink(
+            missing_ok=True
+        )
         self.journal_path.unlink(missing_ok=True)
 
     def finalize(

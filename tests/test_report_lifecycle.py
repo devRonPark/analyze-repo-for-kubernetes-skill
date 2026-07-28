@@ -199,6 +199,10 @@ class ReportLifecycleTests(unittest.TestCase):
         self.assertEqual(result.state, "COMPLETE")
 
     def test_restart_after_rollback_preserves_restored_canonical(self):
+        self.old_bytes = report_renderer.render_report(
+            self.document, self.contract
+        ).encode("utf-8")
+        self.canonical.write_bytes(self.old_bytes)
         (self.workspace / "alternate-report.md").write_text(
             "# alternate\n", encoding="utf-8"
         )
@@ -211,6 +215,7 @@ class ReportLifecycleTests(unittest.TestCase):
         with self.assertRaises(SimulatedCrash):
             self.finalize(lifecycle)
         self.assertEqual(self.canonical.read_bytes(), self.old_bytes)
+        (self.workspace / "alternate-report.md").unlink()
 
         result = self.finalize(self.lifecycle())
 
@@ -395,6 +400,54 @@ class ReportLifecycleTests(unittest.TestCase):
         self.assertEqual(
             self.store.load("session-2").state.value,
             "READY",
+        )
+
+    def test_changed_canonical_path_recovers_original_journal_paths(self):
+        def crash(phase):
+            if phase == "candidate_written":
+                raise SimulatedCrash("owner stopped after candidate")
+
+        original_lifecycle = self.lifecycle(crash_hook=crash)
+        original_candidate = original_lifecycle.candidate_path(
+            "session-1"
+        )
+        with self.assertRaises(SimulatedCrash):
+            self.finalize(original_lifecycle)
+        self.assertTrue(original_candidate.exists())
+
+        changed_directory = self.workspace / "changed"
+        changed_directory.mkdir()
+        changed_canonical = changed_directory / "analysis.md"
+        changed_canonical.write_text(
+            "# unrelated canonical\n", encoding="utf-8"
+        )
+        target_payload = json.loads(
+            self.target.read_text(encoding="utf-8")
+        )
+        target_payload["artifacts"]["report"] = str(changed_canonical)
+        self.target.write_text(
+            json.dumps(target_payload),
+            encoding="utf-8",
+        )
+
+        result = self.lifecycle().finalize(
+            "session-1",
+            self.initial_version,
+            "finalize-key",
+        )
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(self.canonical.read_bytes(), self.old_bytes)
+        self.assertEqual(
+            changed_canonical.read_text(encoding="utf-8"),
+            "# unrelated canonical\n",
+        )
+        self.assertFalse(original_candidate.exists())
+        self.assertFalse(
+            (
+                self.workspace
+                / ".report-session/finalize-journal.json"
+            ).exists()
         )
 
 

@@ -212,6 +212,127 @@ class RepairUnitMappingTests(unittest.TestCase):
             "edge:application:database",
         )
 
+    def test_document_resolver_maps_empty_component_evidence_to_claim(self):
+        document = report_records.ReportDocument(
+            mode="summary",
+            subjects=(
+                report_records.Subject(
+                    "deployable:application-main",
+                    "deployable",
+                    "JPetStore",
+                ),
+            ),
+            claims=(
+                report_records.Claim(
+                    "runtime:startup",
+                    "component_cards",
+                    "deployable:application-main",
+                    "startup_command",
+                    "java -jar app.jar",
+                    "confirmed",
+                    (),
+                    "",
+                ),
+            ),
+            relationships=(),
+        )
+        diagnostic = Diagnostic(
+            "INVALID_EVIDENCE",
+            "",
+            "",
+            "",
+            (
+                "### 배포 대상: JPetStore의 속성 근거에 file:line 또는 "
+                "검색(...)이 없습니다: - 운영 기동 명령: "
+                "`java -jar app.jar` — 상태: 확인됨 / 근거: "
+            ),
+        )
+
+        resolved = report_diagnostics.resolve_document_diagnostics(
+            (diagnostic,),
+            document,
+            report_contract.load_report_contract(),
+        )
+
+        self.assertEqual(resolved[0].section_key, "component_runtime")
+        self.assertEqual(
+            resolved[0].subject_id,
+            "deployable:application-main",
+        )
+        self.assertEqual(resolved[0].field, "startup_command")
+
+    def test_document_resolver_expands_shared_evidence_to_affected_records(self):
+        document = report_records.ReportDocument(
+            mode="summary",
+            subjects=(
+                report_records.Subject(
+                    "deployable:web", "deployable", "Web"
+                ),
+                report_records.Subject(
+                    "dependency:db", "dependency", "Database"
+                ),
+            ),
+            claims=(
+                report_records.Claim(
+                    "runtime:startup",
+                    "component_cards",
+                    "deployable:web",
+                    "startup_command",
+                    "run",
+                    "confirmed",
+                    ("compose.yml:7",),
+                    "",
+                ),
+            ),
+            relationships=(
+                report_records.Relationship(
+                    "edge:web:db",
+                    "deployable:web",
+                    "dependency:db",
+                    (("mechanism", "TCP"),),
+                    "confirmed",
+                    ("compose.yml:7",),
+                    "",
+                ),
+            ),
+        )
+
+        resolved = report_diagnostics.resolve_document_diagnostics(
+            (
+                Diagnostic(
+                    "EVIDENCE_LINE_OUT_OF_RANGE",
+                    "",
+                    "",
+                    "",
+                    (
+                        "인용 줄 범위가 파일 범위를 벗어났습니다: "
+                        "compose.yml:7"
+                    ),
+                ),
+            ),
+            document,
+            report_contract.load_report_contract(),
+        )
+
+        self.assertEqual(
+            {
+                (
+                    diagnostic.section_key,
+                    diagnostic.subject_id,
+                    diagnostic.field,
+                )
+                for diagnostic in resolved
+            },
+            {
+                (
+                    "component_runtime",
+                    "deployable:web",
+                    "startup_command",
+                ),
+                ("relationships", "edge:web:db", ""),
+            },
+        )
+
 
 class ReportRepairLifecycleTests(unittest.TestCase):
     def setUp(self):
