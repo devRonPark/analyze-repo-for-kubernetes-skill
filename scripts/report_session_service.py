@@ -599,6 +599,19 @@ class ReportSessionService:
                 self._load_units(connection, command.session_id),
                 self._load_document(connection, command.session_id),
             )
+            if document.mode != session["mode"]:
+                return ToolResult(
+                    "rejected",
+                    command.session_id,
+                    session["state"],
+                    session["state_version"],
+                    current_lease,
+                    (
+                        current_coverage.completed_units,
+                        current_coverage.total_units,
+                    ),
+                    "session mode와 payload mode가 다릅니다",
+                )
             if session["state_version"] != command.expected_state_version:
                 return ToolResult(
                     "sync_required",

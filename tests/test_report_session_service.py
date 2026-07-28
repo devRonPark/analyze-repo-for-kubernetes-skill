@@ -150,6 +150,27 @@ class ReportSessionServiceTests(unittest.TestCase):
         self.assertEqual(self.service.sync(SyncCommand("session-1")).state_version, 0)
         self.assertEqual(self.count("claims"), 0)
 
+    def test_submit_mode_mismatch_is_rejected_without_state_change(self):
+        started = self.service.start(start_command())
+        payload = global_payload()
+        payload["mode"] = "detailed"
+        command = SubmitChunkCommand(
+            session_id="session-1",
+            lease_id=started.lease.lease_id,
+            chunk_ordinal=0,
+            idempotency_key="submit-mode-mismatch",
+            expected_state_version=0,
+            unit_ids=started.lease.allowed_unit_ids,
+            payload=payload,
+        )
+
+        result = self.service.submit(command)
+
+        self.assertEqual(result.status, "rejected")
+        self.assertIn("mode", result.message)
+        self.assertEqual(self.count("claims"), 0)
+        self.assertEqual(self.service.sync(SyncCommand("session-1")).state_version, 0)
+
     def test_lease_completion_advances_coverage_to_ready(self):
         started = self.service.start(start_command())
         command = SubmitChunkCommand(
