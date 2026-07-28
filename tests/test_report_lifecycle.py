@@ -352,6 +352,51 @@ class ReportLifecycleTests(unittest.TestCase):
         self.assertFalse(worker.is_alive())
         self.assertEqual(outcomes[0].status, "complete")
 
+    def test_changed_target_cannot_fail_another_journal_owner(self):
+        def crash(phase):
+            if phase == "begin_started":
+                raise SimulatedCrash("owner stopped after begin")
+
+        with self.assertRaises(SimulatedCrash):
+            self.finalize(self.lifecycle(crash_hook=crash))
+        second = self.service.start(
+            StartCommand(
+                session_id="session-2",
+                idempotency_key="start-key-2",
+                analysis_snapshot_id="snapshot-2",
+                target_hash=sha256(self.target.read_bytes()).hexdigest(),
+                mode="summary",
+                analysis_snapshot=AnalysisSnapshot(
+                    mode="summary",
+                    deployable_subject_ids=("deployable:jpetstore",),
+                    relationship_edge_ids=("edge:jpetstore:mysql",),
+                ),
+                initial_payload=json.loads(
+                    DOCUMENT_PATH.read_text(encoding="utf-8")
+                ),
+            )
+        )
+        self.assertEqual(second.state, "READY")
+        self.target.write_text(
+            self.target.read_text(encoding="utf-8") + "\n",
+            encoding="utf-8",
+        )
+
+        result = self.lifecycle().finalize(
+            "session-2", second.state_version, "finalize-session-2"
+        )
+
+        self.assertEqual(result.status, "rejected")
+        self.assertEqual(result.session_id, "session-2")
+        self.assertEqual(
+            self.store.load("session-1").state.value,
+            "ASSEMBLING",
+        )
+        self.assertEqual(
+            self.store.load("session-2").state.value,
+            "READY",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

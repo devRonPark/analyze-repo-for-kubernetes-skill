@@ -711,6 +711,17 @@ class ReportLifecycle:
             return existing
 
         journal = self._load_journal()
+        if journal is not None and (
+            journal.get("session_id") != session_id
+            or journal.get("idempotency_key") != idempotency_key
+            or journal.get("expected_state_version")
+            != expected_state_version
+        ):
+            return self._current_result(
+                session_id,
+                "rejected",
+                "다른 finalize operation이 복구 대기 중입니다",
+            )
         binding_error = self._target_binding_error(session_id)
         if binding_error is not None:
             if journal is None:
@@ -734,17 +745,6 @@ class ReportLifecycle:
                 )
             return self._terminal_failure(journal, binding_error)
         if journal is not None:
-            if (
-                journal.get("session_id") != session_id
-                or journal.get("idempotency_key") != idempotency_key
-                or journal.get("expected_state_version")
-                != expected_state_version
-            ):
-                return self._current_result(
-                    session_id,
-                    "rejected",
-                    "다른 finalize operation이 복구 대기 중입니다",
-                )
             return self._resume(journal)
 
         candidate = self.candidate_path(session_id)
