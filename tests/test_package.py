@@ -188,6 +188,12 @@ NEW_VALID_SUMMARY = """# Kubernetes 설계 입력 요약
 
 
 class SkillPackageTests(unittest.TestCase):
+    def test_package_requires_report_contract_artifact(self):
+        validator = (ROOT / "scripts/validate_plugin_package.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"contracts/report-contract-v1.json"', validator)
+
     def test_plugin_owns_one_nested_skill(self):
         self.assertTrue(PLUGIN_SKILL.is_file())
         self.assertFalse((ROOT / "SKILL.md").exists())

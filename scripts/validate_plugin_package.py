@@ -28,6 +28,7 @@ REQUIRED_PLUGIN_FILES = (
     Path("ADR.md"),
     Path("README.md"),
     Path("hooks.json"),
+    Path("contracts/report-contract-v1.json"),
     Path("scripts/validate_report.py"),
     Path("scripts/normalize_report.py"),
     Path("scripts/run_black_box_eval.py"),

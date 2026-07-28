@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import sys
 from tempfile import TemporaryDirectory
 import unittest
@@ -9,6 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import report_contract
 import validate_report
+
+
+def template_h2_headings(path: Path) -> tuple[str, ...]:
+    return tuple(re.findall(r"(?m)^## .+$", path.read_text(encoding="utf-8")))
 
 
 class ReportContractTests(unittest.TestCase):
@@ -68,3 +73,21 @@ class ReportContractTests(unittest.TestCase):
             self.assertEqual(tuple(reloaded.NEW_DETAILED_SECTIONS), detailed_headings)
             self.assertEqual(reloaded.NEW_REPORT_TITLES["summary"], "contract summary")
         importlib.reload(validate_report)
+
+    def test_summary_template_h2_headings_match_the_contract(self):
+        self.assertEqual(
+            template_h2_headings(
+                ROOT
+                / "skills/analyze-repo-for-kubernetes/assets/migration-summary-template.md"
+            ),
+            report_contract.headings_for("summary"),
+        )
+
+    def test_detailed_template_h2_headings_match_the_contract(self):
+        self.assertEqual(
+            template_h2_headings(
+                ROOT
+                / "skills/analyze-repo-for-kubernetes/assets/migration-assessment-template.md"
+            ),
+            report_contract.headings_for("detailed"),
+        )
