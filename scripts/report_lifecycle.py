@@ -269,6 +269,22 @@ class ReportLifecycle:
             raise ValueError("finalize journal root는 object여야 합니다")
         return payload
 
+    def finish_repair_routing(self, session_id: str) -> None:
+        journal = self._load_journal()
+        if journal is None:
+            return
+        if (
+            journal.get("session_id") != session_id
+            or journal.get("phase") != "validation_failed"
+        ):
+            raise RuntimeError(
+                "현재 session의 validation failure journal이 아닙니다"
+            )
+        Path(str(journal["candidate_path"])).unlink(missing_ok=True)
+        Path(str(journal["previous_path"])).unlink(missing_ok=True)
+        self.journal_path.unlink(missing_ok=True)
+        _fsync_directory(self.canonical_path.parent)
+
     def _candidate_diagnostics(
         self, candidate: Path, mode: str
     ) -> tuple[Diagnostic, ...]:
