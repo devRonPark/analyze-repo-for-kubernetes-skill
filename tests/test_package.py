@@ -194,6 +194,18 @@ class SkillPackageTests(unittest.TestCase):
         )
         self.assertIn('"contracts/report-contract-v1.json"', validator)
 
+    def test_package_requires_deterministic_renderer_artifacts(self):
+        validator = (ROOT / "scripts/validate_plugin_package.py").read_text(
+            encoding="utf-8"
+        )
+
+        for artifact in (
+            "scripts/report_records.py",
+            "scripts/report_renderer.py",
+            "scripts/render_report.py",
+        ):
+            self.assertIn(f'"{artifact}"', validator)
+
     def test_plugin_owns_one_nested_skill(self):
         self.assertTrue(PLUGIN_SKILL.is_file())
         self.assertFalse((ROOT / "SKILL.md").exists())

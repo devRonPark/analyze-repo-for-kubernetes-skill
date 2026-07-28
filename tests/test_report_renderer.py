@@ -117,3 +117,56 @@ class ReportRendererTests(unittest.TestCase):
         )
 
         self.assertIn("MISSING_EVIDENCE_FILE", [item.code for item in diagnostics])
+
+    def test_cli_writes_identical_bytes_on_repeated_render(self):
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "report.md"
+            command = [
+                sys.executable,
+                str(ROOT / "scripts/render_report.py"),
+                "--input",
+                str(FIXTURES / "jpetstore-summary.json"),
+                "--output",
+                str(output),
+                "--repo-root",
+                str(EVIDENCE_REPOSITORY),
+            ]
+
+            first = subprocess.run(
+                command, text=True, capture_output=True, check=False
+            )
+            first_bytes = output.read_bytes() if output.exists() else b""
+            second = subprocess.run(
+                command, text=True, capture_output=True, check=False
+            )
+
+            self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+            self.assertEqual(second.returncode, 0, second.stdout + second.stderr)
+            self.assertEqual(first_bytes, output.read_bytes())
+
+    def test_cli_refuses_symlink_output_without_changing_target(self):
+        with TemporaryDirectory() as directory:
+            target = Path(directory) / "target.md"
+            target.write_text("preserve me", encoding="utf-8")
+            output = Path(directory) / "report.md"
+            output.symlink_to(target)
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts/render_report.py"),
+                    "--input",
+                    str(FIXTURES / "jpetstore-summary.json"),
+                    "--output",
+                    str(output),
+                    "--repo-root",
+                    str(EVIDENCE_REPOSITORY),
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("symlink", result.stdout + result.stderr)
+            self.assertEqual(target.read_text(encoding="utf-8"), "preserve me")
