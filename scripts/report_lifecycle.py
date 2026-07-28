@@ -97,8 +97,11 @@ class ReportLifecycle:
         recovery_session_id: str | None = None,
     ):
         self.store = store
-        self.target_json = Path(target_json).expanduser().resolve(
-            strict=False
+        target_path = Path(target_json).expanduser()
+        self.target_json = (
+            target_path
+            if target_payload is not None
+            else target_path.resolve(strict=False)
         )
         self.workspace = self.target_json.parent
         self.journal_path = (

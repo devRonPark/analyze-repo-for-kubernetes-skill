@@ -170,9 +170,13 @@ def serve() -> int:
     store = SQLiteReportSessionStore(_database_path())
     service = ReportSessionService(store)
     target_json = os.environ.get("REPORT_TARGET_JSON")
-    configured_target = Path(target_json) if target_json else None
+    configured_target = None
+    if target_json:
+        configured_target = Path(target_json).expanduser()
+        if not configured_target.is_absolute():
+            configured_target = Path.cwd() / configured_target
     workspace = (
-        configured_target.expanduser().resolve(strict=False).parent
+        configured_target.parent.resolve(strict=False)
         if configured_target is not None
         else Path(os.environ.get("REPORT_WORKSPACE", os.getcwd()))
     )

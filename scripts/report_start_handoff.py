@@ -285,7 +285,10 @@ def _analysis_snapshot(content: bytes) -> AnalysisSnapshot:
 def _write_all(descriptor: int, content: bytes) -> None:
     position = 0
     while position < len(content):
-        position += os.write(descriptor, content[position:])
+        written = os.write(descriptor, content[position:])
+        if written <= 0:
+            raise HandoffError("report handoff input is invalid")
+        position += written
 
 
 def _install_immutable(

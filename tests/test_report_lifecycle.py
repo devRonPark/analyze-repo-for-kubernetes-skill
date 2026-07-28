@@ -142,6 +142,24 @@ class ReportLifecycleTests(unittest.TestCase):
             (self.workspace / ".previous-session-1.tmp").exists()
         )
 
+    def test_verified_payload_preserves_lexical_target_identity(self):
+        target_bytes = self.target.read_bytes()
+        target_payload = json.loads(target_bytes)
+        outside = self.workspace / "outside"
+        outside.mkdir()
+        outside_target = outside / "target.json"
+        outside_target.write_bytes(target_bytes)
+        self.target.unlink()
+        self.target.symlink_to(outside_target)
+
+        lifecycle = self.lifecycle(
+            target_payload=target_payload,
+            verified_target_bytes=target_bytes,
+        )
+
+        self.assertEqual(lifecycle.target_json, self.target)
+        self.assertEqual(lifecycle.workspace, self.workspace)
+
     def test_candidate_validation_failure_preserves_old_canonical_bytes(self):
         lifecycle = self.lifecycle(
             renderer=lambda document, contract: "# invalid candidate\n"
