@@ -6,6 +6,8 @@ import re
 import sys
 from pathlib import Path
 
+import report_contract
+
 SUMMARY_SECTIONS = [
     "## 1. 범위",
     "## 2. 한눈에 보기",
@@ -13,14 +15,7 @@ SUMMARY_SECTIONS = [
     "## 4. 구성 요소 관계",
     "## 5. 최종 판정",
 ]
-NEW_SUMMARY_SECTIONS = [
-    "## 1. 분석 범위",
-    "## 2. 배포 대상 후보",
-    "## 3. 배포 대상별 실행 정보",
-    "## 4. 구성과 관계",
-    "## 5. 운영 환경 배포 근거",
-    "## 6. Kubernetes 설계 입력 상태",
-]
+NEW_SUMMARY_SECTIONS = list(report_contract.headings_for("summary"))
 
 DETAILED_SECTIONS = [
     "## 1. 평가 범위",
@@ -31,16 +26,11 @@ DETAILED_SECTIONS = [
     "## 6. 최소 입력 누락과 conflict 상세",
     "## 7. 최종 판정",
 ]
-NEW_DETAILED_SECTIONS = [
-    "## 1. 분석 범위",
-    "## 2. 배포 대상 후보",
-    "## 3. 배포 대상별 실행 정보",
-    "## 4. 구성과 관계",
-    "## 5. 운영 환경 배포 근거",
-    "## 6. 설정과 상태 상세",
-    "## 7. 제외 항목과 설계 차단 항목 상세",
-    "## 8. Kubernetes 설계 입력 상태",
-]
+NEW_DETAILED_SECTIONS = list(report_contract.headings_for("detailed"))
+NEW_REPORT_TITLES = {
+    "summary": report_contract.title_for("summary"),
+    "detailed": report_contract.title_for("detailed"),
+}
 SECTION_CONTRACTS = {
     ("legacy", "summary"): SUMMARY_SECTIONS,
     ("legacy", "detailed"): DETAILED_SECTIONS,
@@ -78,9 +68,9 @@ SECTION_HEADING = re.compile(r"^##\s*(?:(?P<number>\d+)\.\s*)?(?P<name>.+?)\s*$"
 
 
 def detect_mode(text: str) -> str | None:
-    if text.lstrip().startswith(("# Kubernetes 이관 요약", "# Kubernetes 설계 입력 요약")):
+    if text.lstrip().startswith(("# Kubernetes 이관 요약", f"# {NEW_REPORT_TITLES['summary']}")):
         return "summary"
-    if text.lstrip().startswith(("# Kubernetes 이관 상세 평가", "# Kubernetes 설계 입력 상세 평가")):
+    if text.lstrip().startswith(("# Kubernetes 이관 상세 평가", f"# {NEW_REPORT_TITLES['detailed']}")):
         return "detailed"
     return None
 
