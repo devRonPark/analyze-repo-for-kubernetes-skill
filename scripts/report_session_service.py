@@ -1157,6 +1157,15 @@ class ReportSessionService:
         return self.store.transact(operation)
 
     def finalize(self, command: object) -> ToolResult:
+        existing = self.store.transact(
+            lambda connection: connection.execute(
+                "SELECT result_json FROM finalize_results "
+                "WHERE session_id = ? AND idempotency_key = ?",
+                (command.session_id, command.idempotency_key),
+            ).fetchone()
+        )
+        if existing is not None:
+            return _result_from_json(existing["result_json"])
         lifecycle = (
             self.lifecycle_resolver(command.session_id)
             if self.lifecycle_resolver is not None

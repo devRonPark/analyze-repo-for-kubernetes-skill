@@ -433,6 +433,42 @@ class ReportStartHandoffTests(unittest.TestCase):
             second_report.read_text(encoding="utf-8"), "# original\n"
         )
 
+    def test_duplicate_finalize_returns_stored_result_before_target_resolution(
+        self,
+    ):
+        retry_workspace = self.workspace / "retry"
+        retry_workspace.mkdir()
+        target, _ = write_finalizable_target(retry_workspace)
+        resolver = ReportStartResolver(
+            self.service,
+            workspace_root=self.workspace,
+        )
+        fixture = json.loads(
+            REPORT_FIXTURE.read_text(encoding="utf-8")
+        )
+        handoff = create_start_handoff(
+            target,
+            deployable_subject_ids=("deployable:jpetstore",),
+            relationship_edge_ids=("edge:jpetstore:mysql",),
+        )
+        started = self.service.start(
+            replace(
+                resolver(StartToolCommand(**handoff)),
+                initial_payload=fixture,
+            )
+        )
+        command = SimpleNamespace(
+            session_id=started.session_id,
+            expected_state_version=started.state_version,
+            idempotency_key="finalize-retry",
+        )
+
+        first = self.service.finalize(command)
+        target.unlink()
+        second = self.service.finalize(command)
+
+        self.assertEqual(first, second)
+
     def test_lifecycle_uses_descriptor_verified_target_payload(self):
         handoff = self.handoff()
         resolver = ReportStartResolver(
