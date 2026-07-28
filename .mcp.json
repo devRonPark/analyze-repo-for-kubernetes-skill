@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "report-tools": {
+      "type": "stdio",
+      "command": "python3",
+      "args": [
+        "${PLUGIN_ROOT}/mcp/report_tool_server.py"
+      ]
+    }
+  }
+}

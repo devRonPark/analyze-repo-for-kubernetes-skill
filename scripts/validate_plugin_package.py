@@ -27,6 +27,7 @@ MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)")
 REQUIRED_PLUGIN_FILES = (
     Path("ADR.md"),
     Path("README.md"),
+    Path(".mcp.json"),
     Path("hooks.json"),
     Path("contracts/report-contract-v1.json"),
     Path("scripts/report_records.py"),
@@ -37,6 +38,12 @@ REQUIRED_PLUGIN_FILES = (
     Path("scripts/report_work_units.py"),
     Path("scripts/report_lease_planner.py"),
     Path("scripts/report_session_service.py"),
+    Path("scripts/report_tool_schemas.py"),
+    Path("scripts/report_tool_commands.py"),
+    Path("scripts/report_tool_handler.py"),
+    Path("scripts/report_model_protocol.py"),
+    Path("scripts/report_orchestrator.py"),
+    Path("mcp/report_tool_server.py"),
     Path("scripts/validate_report.py"),
     Path("scripts/normalize_report.py"),
     Path("scripts/run_black_box_eval.py"),
@@ -183,6 +190,10 @@ def _validate_manifest(manifest: dict[str, Any], errors: list[str]) -> None:
         errors.append("Plugin manifest version must use strict semver")
     if manifest.get("skills") != "./skills/":
         errors.append('Plugin manifest skills must be exactly "./skills/"')
+    if manifest.get("mcpServers") != "./.mcp.json":
+        errors.append(
+            'Plugin manifest mcpServers must be exactly "./.mcp.json"'
+        )
     if manifest.get("name") != PLUGIN_NAME:
         errors.append(f"Plugin manifest name must be {PLUGIN_NAME}")
 
@@ -275,6 +286,29 @@ def _validate_required_content(root: Path, errors: list[str]) -> None:
             )
 
 
+def _validate_mcp_config(root: Path, errors: list[str]) -> None:
+    path = root / ".mcp.json"
+    if not path.is_file():
+        return
+    try:
+        config = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        errors.append(f"MCP config is not valid UTF-8 JSON: {exc}")
+        return
+    expected = {
+        "type": "stdio",
+        "command": "python3",
+        "args": ["${PLUGIN_ROOT}/mcp/report_tool_server.py"],
+    }
+    servers = config.get("mcpServers") if isinstance(config, dict) else None
+    server = servers.get("report-tools") if isinstance(servers, dict) else None
+    if server != expected:
+        errors.append(
+            "MCP config must register only the local foreground report-tools "
+            "stdio server"
+        )
+
+
 def validate_plugin_package(root: Path) -> tuple[str, ...]:
     package_root = Path(root).resolve()
     errors: list[str] = []
@@ -283,6 +317,7 @@ def validate_plugin_package(root: Path) -> tuple[str, ...]:
         _validate_manifest(manifest, errors)
     _validate_skill(package_root, manifest, errors)
     _validate_required_content(package_root, errors)
+    _validate_mcp_config(package_root, errors)
     return tuple(errors)
 
 

@@ -62,6 +62,15 @@ class ReportRecordTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "reason"):
             report_records.parse_report_document(payload)
 
+    def test_unknown_claim_accepts_empty_reason_from_tool_contract(self):
+        payload = valid_document_payload()
+        payload["claims"][0]["status"] = "unknown"
+        payload["claims"][0]["value"] = "확인되지 않음"
+
+        document = report_records.parse_report_document(payload)
+
+        self.assertEqual(document.claims[0].reason, "")
+
     def test_document_rejects_duplicate_claim_id(self):
         payload = valid_document_payload()
         payload["claims"].append(copy.deepcopy(payload["claims"][0]))
