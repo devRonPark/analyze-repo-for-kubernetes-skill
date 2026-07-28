@@ -19,12 +19,12 @@ Use [interview-first-intake.md](references/interview-first-intake.md) for the qu
 
 ## Mandatory Preparation
 
-At `analysis_ready`, create one disposable workspace outside the target. Run `scripts/prepare_analysis_target.py` before any repository web or search tool:
+At `analysis_ready`, resolve the Plugin root as the Skill directory's 두 단계 상위, then create one disposable workspace outside the target. Run `<plugin-root>/scripts/prepare_analysis_target.py` before any repository web or search tool:
 
 ```text
-python3 <skill-root>/scripts/prepare_analysis_target.py --remote-git <url> --workspace <new-dir> --mode <summary|detailed>
-python3 <skill-root>/scripts/prepare_analysis_target.py --local-checkout <path> --workspace <new-dir> --mode <summary|detailed>
-python3 <skill-root>/scripts/prepare_analysis_target.py --source-archive <path> --workspace <new-dir> --mode <summary|detailed>
+python3 <plugin-root>/scripts/prepare_analysis_target.py --remote-git <url> --workspace <new-dir> --mode <summary|detailed>
+python3 <plugin-root>/scripts/prepare_analysis_target.py --local-checkout <path> --workspace <new-dir> --mode <summary|detailed>
+python3 <plugin-root>/scripts/prepare_analysis_target.py --source-archive <path> --workspace <new-dir> --mode <summary|detailed>
 ```
 
 The command resolves the source, performs read-only clone or extraction, writes full evidence plus bounded `evidence-digest.json`, copies one selected template to `report.md`, and writes `target.json`. Do not use web search after preparation succeeds. On retry, reuse the same workspace with `--resume`; do not clone or scan again.
@@ -64,6 +64,6 @@ Read exactly one selected report template, staged as `report.md`:
 
 Fill the staged file without adding deployment instructions. Detailed reports require consistent `Dependency matrix` and `Text dependency graph`.
 
-Execute the exact `validation.command` array from `target.json`; do not reconstruct its path. Do not read `scripts/validate_report.py`; use its concise diagnostics. Fix validation failures and rerun the same command.
+Execute the exact `validation.command` array from `target.json`; do not reconstruct its path. Do not read `<plugin-root>/scripts/validate_report.py`; use its concise diagnostics. Fix validation failures and rerun the same command.
 
 After validation, return the full contents of `report.md` as the final response. A verdict-only response is invalid. End the full report with exactly one verdict: `설계 입력 충분`, `추가 정보 필요`, or `분석 불가`.

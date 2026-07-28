@@ -6,26 +6,28 @@ import re
 import sys
 from pathlib import Path
 
+SKILL_REL = Path("skills/analyze-repo-for-kubernetes")
+
 REQUIRED = [
     "ADR.md",
-    "SKILL.md",
+    str(SKILL_REL / "SKILL.md"),
     "README.md",
-    "agents/openai.yaml",
+    str(SKILL_REL / "agents/openai.yaml"),
     "hooks.json",
-    "references/workflow.md",
-    "references/evidence-pattern-packs.md",
-    "references/codex-ui-integration.md",
-    "references/interview-first-intake.md",
-    "references/remote-git-access.md",
-    "references/source-intake-state.md",
-    "references/repository-analysis-checklist.md",
-    "references/language-discovery-rules.md",
-    "references/dependency-analysis.md",
-    "references/evidence-and-readiness.md",
-    "references/configuration-timing.md",
-    "assets/migration-assessment-template.md",
-    "assets/migration-summary-template.md",
-    "assets/demo-git-credential.example.json",
+    str(SKILL_REL / "references/workflow.md"),
+    str(SKILL_REL / "references/evidence-pattern-packs.md"),
+    str(SKILL_REL / "references/codex-ui-integration.md"),
+    str(SKILL_REL / "references/interview-first-intake.md"),
+    str(SKILL_REL / "references/remote-git-access.md"),
+    str(SKILL_REL / "references/source-intake-state.md"),
+    str(SKILL_REL / "references/repository-analysis-checklist.md"),
+    str(SKILL_REL / "references/language-discovery-rules.md"),
+    str(SKILL_REL / "references/dependency-analysis.md"),
+    str(SKILL_REL / "references/evidence-and-readiness.md"),
+    str(SKILL_REL / "references/configuration-timing.md"),
+    str(SKILL_REL / "assets/migration-assessment-template.md"),
+    str(SKILL_REL / "assets/migration-summary-template.md"),
+    str(SKILL_REL / "assets/demo-git-credential.example.json"),
     "scripts/validate_report.py",
     "scripts/normalize_report.py",
     "scripts/run_black_box_eval.py",
@@ -83,7 +85,8 @@ def main() -> int:
         if not (root / rel).is_file():
             errors.append(f"필수 파일이 없습니다: {rel}")
 
-    skill_path = root / "SKILL.md"
+    skill_root = root / SKILL_REL
+    skill_path = skill_root / "SKILL.md"
     if skill_path.is_file():
         text = skill_path.read_text(encoding="utf-8")
         match = re.match(r"^---\nname: ([a-z0-9-]+)\ndescription: (.+)\n---\n", text)
@@ -102,7 +105,7 @@ def main() -> int:
         if len(links) < 5:
             errors.append("SKILL.md는 패키지에 포함된 references와 template을 링크해야 합니다")
         for rel in links:
-            if not (root / rel).is_file():
+            if not (skill_root / rel).is_file():
                 errors.append(f"깨진 SKILL.md 링크입니다: {rel}")
 
     markdown = list(root.rglob("*.md"))

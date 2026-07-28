@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import subprocess
 import sys
 import tarfile
@@ -8,6 +9,8 @@ import importlib.util
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
+SKILL_ROOT = ROOT / "skills/analyze-repo-for-kubernetes"
+PLUGIN_SKILL = SKILL_ROOT / "SKILL.md"
 
 
 VALID_SUMMARY = """# Kubernetes 이관 요약
@@ -185,6 +188,31 @@ NEW_VALID_SUMMARY = """# Kubernetes 설계 입력 요약
 
 
 class SkillPackageTests(unittest.TestCase):
+    def test_plugin_owns_one_nested_skill(self):
+        self.assertTrue(PLUGIN_SKILL.is_file())
+        self.assertFalse((ROOT / "SKILL.md").exists())
+        self.assertFalse((ROOT / "agents/openai.yaml").exists())
+        self.assertTrue(
+            (ROOT / "skills/analyze-repo-for-kubernetes/agents/openai.yaml").is_file()
+        )
+        self.assertEqual(
+            [PLUGIN_SKILL],
+            [
+                path
+                for path in ROOT.rglob("*")
+                if path.is_file() and path.name.lower() == "skill.md"
+            ],
+        )
+
+    def test_plugin_manifest_exposes_nested_skill_directory(self):
+        manifest_path = ROOT / ".codex-plugin/plugin.json"
+        self.assertTrue(manifest_path.is_file())
+        manifest = json.loads(
+            manifest_path.read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["name"], "analyze-repo-for-kubernetes")
+        self.assertEqual(manifest["skills"], "./skills/")
+
     def run_report_validator(
         self,
         report_text: str,
@@ -243,7 +271,7 @@ class SkillPackageTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_skill_entrypoint_stays_small_and_routes_details_progressively(self):
-        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        skill = PLUGIN_SKILL.read_text(encoding="utf-8")
         body = skill.split("---", 2)[2]
         self.assertLessEqual(len(body.splitlines()), 90)
         for reference in [
@@ -256,7 +284,8 @@ class SkillPackageTests(unittest.TestCase):
             "assets/migration-assessment-template.md",
         ]:
             self.assertIn(reference, skill)
-        self.assertIn("scripts/prepare_analysis_target.py", skill)
+        self.assertIn("<plugin-root>/scripts/prepare_analysis_target.py", skill)
+        self.assertIn("두 단계 상위", skill)
 
     def test_github_actions_runs_cli_independent_core_suite(self):
         workflow = (ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
@@ -269,9 +298,9 @@ class SkillPackageTests(unittest.TestCase):
         self.assertNotIn("test_repository_distribution", workflow)
 
     def test_target_resolution_gate_contract(self):
-        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
-        intake = (ROOT / "references/interview-first-intake.md").read_text(encoding="utf-8")
-        state = (ROOT / "references/source-intake-state.md").read_text(encoding="utf-8")
+        skill = PLUGIN_SKILL.read_text(encoding="utf-8")
+        intake = (SKILL_ROOT / "references/interview-first-intake.md").read_text(encoding="utf-8")
+        state = (SKILL_ROOT / "references/source-intake-state.md").read_text(encoding="utf-8")
         combined = skill + "\n" + intake + "\n" + state
         for term in [
             "Target Resolution Gate",
@@ -299,9 +328,9 @@ class SkillPackageTests(unittest.TestCase):
         text = "\n".join(
             path.read_text(encoding="utf-8")
             for path in [
-                ROOT / "SKILL.md",
-                ROOT / "references/source-intake-state.md",
-                ROOT / "references/interview-first-intake.md",
+                PLUGIN_SKILL,
+                SKILL_ROOT / "references/source-intake-state.md",
+                SKILL_ROOT / "references/interview-first-intake.md",
                 ROOT / "tests/scenarios.md",
             ]
         )
@@ -327,9 +356,9 @@ class SkillPackageTests(unittest.TestCase):
         text = "\n".join(
             path.read_text(encoding="utf-8")
             for path in [
-                ROOT / "SKILL.md",
-                ROOT / "references/source-intake-state.md",
-                ROOT / "references/workflow.md",
+                PLUGIN_SKILL,
+                SKILL_ROOT / "references/source-intake-state.md",
+                SKILL_ROOT / "references/workflow.md",
             ]
         )
         for term in [
@@ -357,7 +386,7 @@ class SkillPackageTests(unittest.TestCase):
     def test_codex_target_gate_hook_contract(self):
         hook = (ROOT / "scripts/codex_target_gate_hook.py").read_text(encoding="utf-8")
         manifest = (ROOT / "hooks.json").read_text(encoding="utf-8")
-        state = (ROOT / "references/source-intake-state.md").read_text(encoding="utf-8")
+        state = (SKILL_ROOT / "references/source-intake-state.md").read_text(encoding="utf-8")
         for term in [
             "PreToolUse",
             "source_method_required",
@@ -373,7 +402,7 @@ class SkillPackageTests(unittest.TestCase):
 
     def test_opt_in_codex_cli_validator_contract(self):
         validator = (ROOT / "scripts/validate_codex_intake.py").read_text(encoding="utf-8")
-        runbook = (ROOT / "references/codex-ui-integration.md").read_text(encoding="utf-8")
+        runbook = (SKILL_ROOT / "references/codex-ui-integration.md").read_text(encoding="utf-8")
         for term in [
             "CODEX_INTEGRATION",
             "--ephemeral",
@@ -385,7 +414,7 @@ class SkillPackageTests(unittest.TestCase):
 
     def test_user_facing_invocation_examples_hide_internal_choices(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        prompt = (ROOT / "agents/openai.yaml").read_text(encoding="utf-8")
+        prompt = (SKILL_ROOT / "agents/openai.yaml").read_text(encoding="utf-8")
         execution = readme.split("## 실행", 1)[1].split("## 결과 검사", 1)[0]
 
         for term in [
@@ -408,8 +437,8 @@ class SkillPackageTests(unittest.TestCase):
         self.assertNotIn("detailed mode", prompt)
 
     def test_demo_credential_file_contract(self):
-        access = (ROOT / "references/remote-git-access.md").read_text(encoding="utf-8")
-        example = (ROOT / "assets/demo-git-credential.example.json").read_text(encoding="utf-8")
+        access = (SKILL_ROOT / "references/remote-git-access.md").read_text(encoding="utf-8")
+        example = (SKILL_ROOT / "assets/demo-git-credential.example.json").read_text(encoding="utf-8")
         for term in [
             "데모용 local credential file 경로 제공",
             "파일 내용이나 Access Token은 대화에 입력하지 마세요.",
@@ -572,9 +601,9 @@ class SkillPackageTests(unittest.TestCase):
         text = "\n".join(
             path.read_text(encoding="utf-8")
             for path in [
-                ROOT / "SKILL.md",
-                ROOT / "assets/migration-summary-template.md",
-                ROOT / "assets/migration-assessment-template.md",
+                PLUGIN_SKILL,
+                SKILL_ROOT / "assets/migration-summary-template.md",
+                SKILL_ROOT / "assets/migration-assessment-template.md",
             ]
         )
         for term in [
@@ -598,9 +627,9 @@ class SkillPackageTests(unittest.TestCase):
         self.assertNotIn("다음 인계:", text)
 
     def test_fact_based_analysis_outcome_contract(self):
-        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
-        summary = (ROOT / "assets/migration-summary-template.md").read_text(encoding="utf-8")
-        checklist = (ROOT / "references/repository-analysis-checklist.md").read_text(encoding="utf-8")
+        skill = PLUGIN_SKILL.read_text(encoding="utf-8")
+        summary = (SKILL_ROOT / "assets/migration-summary-template.md").read_text(encoding="utf-8")
+        checklist = (SKILL_ROOT / "references/repository-analysis-checklist.md").read_text(encoding="utf-8")
         for term in [
             "배포 대상 후보",
             "저장소에 정의된 런타임 의존성",
@@ -613,9 +642,9 @@ class SkillPackageTests(unittest.TestCase):
         text = "\n".join(
             path.read_text(encoding="utf-8")
             for path in [
-                ROOT / "SKILL.md",
-                ROOT / "references/workflow.md",
-                ROOT / "assets/migration-summary-template.md",
+                PLUGIN_SKILL,
+                SKILL_ROOT / "references/workflow.md",
+                SKILL_ROOT / "assets/migration-summary-template.md",
             ]
         )
         for term in [
@@ -630,9 +659,9 @@ class SkillPackageTests(unittest.TestCase):
         text = "\n".join(
             path.read_text(encoding="utf-8")
             for path in [
-                ROOT / "SKILL.md",
-                ROOT / "references/language-discovery-rules.md",
-                ROOT / "assets/migration-summary-template.md",
+                PLUGIN_SKILL,
+                SKILL_ROOT / "references/language-discovery-rules.md",
+                SKILL_ROOT / "assets/migration-summary-template.md",
             ]
         )
         for term in [
@@ -645,10 +674,10 @@ class SkillPackageTests(unittest.TestCase):
         text = "\n".join(
             path.read_text(encoding="utf-8")
             for path in [
-                ROOT / "SKILL.md",
-                ROOT / "references/workflow.md",
-                ROOT / "references/evidence-and-readiness.md",
-                ROOT / "assets/migration-summary-template.md",
+                PLUGIN_SKILL,
+                SKILL_ROOT / "references/workflow.md",
+                SKILL_ROOT / "references/evidence-and-readiness.md",
+                SKILL_ROOT / "assets/migration-summary-template.md",
             ]
         )
         for term in [
@@ -680,7 +709,7 @@ class SkillPackageTests(unittest.TestCase):
             self.assertIn(term, text)
 
     def test_evidence_pattern_packs_reference_contract(self):
-        reference = ROOT / "references/evidence-pattern-packs.md"
+        reference = SKILL_ROOT / "references/evidence-pattern-packs.md"
         self.assertTrue(reference.is_file(), "references/evidence-pattern-packs.md")
         text = reference.read_text(encoding="utf-8")
         for term in [
@@ -720,9 +749,9 @@ class SkillPackageTests(unittest.TestCase):
         text = "\n".join(
             path.read_text(encoding="utf-8")
             for path in [
-                ROOT / "SKILL.md",
-                ROOT / "references/workflow.md",
-                ROOT / "references/evidence-pattern-packs.md",
+                PLUGIN_SKILL,
+                SKILL_ROOT / "references/workflow.md",
+                SKILL_ROOT / "references/evidence-pattern-packs.md",
             ]
         )
         for term in [
