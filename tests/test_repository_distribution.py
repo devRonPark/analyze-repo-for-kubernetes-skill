@@ -148,14 +148,36 @@ class RepositoryDistributionTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_install_script_creates_qwen_skill_symlink(self):
+    def test_install_registers_qwen_skill_and_report_lifecycle_server(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
-            home.mkdir()
+            settings = home / ".qwen/settings.json"
+            settings.parent.mkdir(parents=True)
+            settings.write_text(
+                json.dumps(
+                    {
+                        "auth": {"type": "api_key", "apiKey": "keep-secret"},
+                        "theme": "dark",
+                        "mcpServers": {
+                            "unrelated-server": {
+                                "type": "stdio",
+                                "command": "existing-command",
+                                "args": ["--preserve"],
+                            }
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            env = {
+                "HOME": str(home),
+                "PATH": "/usr/bin:/bin",
+                "CODEX_SKIP_HOOK": "1",
+            }
             result = subprocess.run(
                 ["bash", str(ROOT / "scripts/install-qwen.sh")],
                 cwd=ROOT,
-                env={"HOME": str(home), "PATH": "/usr/bin:/bin", "CODEX_SKIP_HOOK": "1"},
+                env=env,
                 capture_output=True,
                 text=True,
                 check=False,
@@ -167,9 +189,42 @@ class RepositoryDistributionTests(unittest.TestCase):
                 installed.resolve(),
                 (ROOT / "skills/analyze-repo-for-kubernetes").resolve(),
             )
+            configured = json.loads(settings.read_text(encoding="utf-8"))
+            self.assertEqual(configured["auth"]["apiKey"], "keep-secret")
+            self.assertEqual(configured["theme"], "dark")
+            self.assertEqual(
+                configured["mcpServers"]["unrelated-server"],
+                {
+                    "type": "stdio",
+                    "command": "existing-command",
+                    "args": ["--preserve"],
+                },
+            )
+            self.assertEqual(
+                configured["mcpServers"]["analyze-repo-report-lifecycle"],
+                {
+                    "type": "stdio",
+                    "command": "python3",
+                    "args": [
+                        str((ROOT / "mcp/report_tool_server.py").resolve())
+                    ],
+                },
+            )
+            self.assertNotIn("keep-secret", result.stdout + result.stderr)
+
+            rerun = subprocess.run(
+                ["bash", str(ROOT / "scripts/install-qwen.sh")],
+                cwd=ROOT,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(rerun.returncode, 0, rerun.stdout + rerun.stderr)
+            self.assertEqual(configured, json.loads(settings.read_text(encoding="utf-8")))
             self.assertNotIn("deprecated", result.stderr.lower())
 
-    def test_update_script_preserves_nested_qwen_skill_target(self):
+    def test_update_registers_skill_and_report_lifecycle_from_checkout(self):
         with tempfile.TemporaryDirectory() as tmp:
             temp_root = Path(tmp)
             plugin = temp_root / "plugin"
@@ -191,6 +246,9 @@ class RepositoryDistributionTests(unittest.TestCase):
             self.write_executable(
                 fake_bin / "python3",
                 "#!/usr/bin/env bash\n"
+                "if [[ \"$1\" == */scripts/configure_qwen_report_tools.py ]]; then\n"
+                "  exec /usr/bin/python3 \"$@\"\n"
+                "fi\n"
                 'printf "%s\\n" "$*" >> "$COMMAND_LOG"\n'
                 "exit 0\n",
             )
@@ -213,6 +271,19 @@ class RepositoryDistributionTests(unittest.TestCase):
             self.assertEqual(
                 installed.resolve(),
                 (plugin / "skills/analyze-repo-for-kubernetes").resolve(),
+            )
+            configured = json.loads(
+                (home / ".qwen/settings.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                configured["mcpServers"]["analyze-repo-report-lifecycle"],
+                {
+                    "type": "stdio",
+                    "command": "python3",
+                    "args": [
+                        str((plugin / "mcp/report_tool_server.py").resolve())
+                    ],
+                },
             )
             commands = command_log.read_text(encoding="utf-8")
             self.assertIn(

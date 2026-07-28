@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PLUGIN_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+PLUGIN_ROOT="$(cd "$SCRIPT_DIR/.." && pwd -P)"
 SKILL_ROOT="$PLUGIN_ROOT/skills/analyze-repo-for-kubernetes"
 SKILLS_DIR="${QWEN_SKILLS_DIR:-$HOME/.qwen/skills}"
 TARGET="$SKILLS_DIR/analyze-repo-for-kubernetes"
@@ -21,6 +21,7 @@ if [ -e "$TARGET" ] || [ -L "$TARGET" ]; then
 fi
 
 ln -s "$SKILL_ROOT" "$TARGET"
+python3 "$PLUGIN_ROOT/scripts/configure_qwen_report_tools.py" "$PLUGIN_ROOT"
 
 echo "Qwen 스킬 설치 완료"
 echo "Plugin root: $PLUGIN_ROOT"
