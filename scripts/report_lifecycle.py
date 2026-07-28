@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
+import fcntl
 from hashlib import sha256
 import json
 import os
 from pathlib import Path
 import re
-import subprocess
 from typing import Callable, Mapping
 
+import bounded_subprocess
 import report_contract
 from report_diagnostics import Diagnostic
+import report_diagnostics
 import report_records
 import report_renderer
 from report_session_models import SessionState
@@ -91,7 +94,10 @@ class ReportLifecycle:
         crash_hook: Callable[[str], None] | None = None,
     ):
         self.store = store
-        self.target_json = Path(target_json)
+        self.target_json = Path(target_json).expanduser().resolve(
+            strict=False
+        )
+        self.workspace = self.target_json.parent
         self.document_loader = document_loader
         self.contract = contract or report_contract.load_report_contract()
         self.renderer = renderer
@@ -103,11 +109,47 @@ class ReportLifecycle:
         canonical = artifacts.get("report")
         if not isinstance(canonical, str) or not canonical:
             raise ValueError("target.json artifacts.report가 없습니다")
-        self.canonical_path = Path(canonical)
+        canonical_path = Path(canonical).expanduser()
+        if not canonical_path.is_absolute():
+            canonical_path = self.workspace / canonical_path
+        self.canonical_path = canonical_path.resolve(strict=False)
+        try:
+            self.canonical_path.relative_to(self.workspace)
+        except ValueError as error:
+            raise ValueError(
+                "canonical report path가 target workspace 밖을 가리킵니다"
+            ) from error
         self.journal_path = (
             self.canonical_path.parent
             / ".report-session/finalize-journal.json"
         )
+        self.lock_path = (
+            self.canonical_path.parent
+            / ".report-session/finalize.lock"
+        )
+
+    @contextmanager
+    def _workspace_lock(self):
+        self.lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.lock_path.open("a+b") as stream:
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
+    def _target_binding_error(self, session_id: str) -> str | None:
+        expected = self.store.load(session_id).target_hash
+        try:
+            actual = sha256(self.target_json.read_bytes()).hexdigest()
+        except OSError as error:
+            return (
+                "target hash를 검증할 수 없습니다: "
+                f"{type(error).__name__}"
+            )
+        if actual != expected:
+            return "target hash mismatch"
+        return None
 
     def candidate_path(self, session_id: str) -> Path:
         return self.canonical_path.parent / (
@@ -215,6 +257,11 @@ class ReportLifecycle:
                     f"report session을 찾을 수 없습니다: {session_id}"
                 )
             coverage = self._coverage(connection, session_id)
+            if (
+                row["state"] == SessionState.ASSEMBLING.value
+                and row["state_version"] == expected_state_version + 1
+            ):
+                return row["state_version"], coverage
             if row["state_version"] != expected_state_version:
                 return ToolResult(
                     "sync_required",
@@ -270,6 +317,10 @@ class ReportLifecycle:
         return payload
 
     def finish_repair_routing(self, session_id: str) -> None:
+        with self._workspace_lock():
+            self._finish_repair_routing(session_id)
+
+    def _finish_repair_routing(self, session_id: str) -> None:
         journal = self._load_journal()
         if journal is None:
             return
@@ -286,18 +337,45 @@ class ReportLifecycle:
         _fsync_directory(self.canonical_path.parent)
 
     def _candidate_diagnostics(
-        self, candidate: Path, mode: str
+        self,
+        candidate: Path,
+        mode: str,
+        document: report_records.ReportDocument,
     ) -> tuple[Diagnostic, ...]:
         repository_root = self.target.get("analysis_root")
-        return validate_report.validate_text(
-            candidate.read_text(encoding="utf-8"),
-            mode=mode,
-            contract="new",
-            repository_root=(
-                Path(repository_root)
-                if isinstance(repository_root, str)
-                else None
+        return report_diagnostics.resolve_document_diagnostics(
+            validate_report.validate_text(
+                candidate.read_text(encoding="utf-8"),
+                mode=mode,
+                contract="new",
+                repository_root=(
+                    Path(repository_root)
+                    if isinstance(repository_root, str)
+                    else None
+                ),
             ),
+            document,
+            self.contract,
+        )
+
+    def _validation_failure_result(
+        self, journal: dict[str, object]
+    ) -> ToolResult:
+        session_id = str(journal["session_id"])
+        snapshot = self.store.load(session_id)
+        if snapshot.state is SessionState.VALIDATING:
+            self._transition(
+                session_id,
+                state=SessionState.REPAIRING,
+                event="CANDIDATE_REJECTED",
+                details={
+                    "diagnostics": journal.get("diagnostics", []),
+                },
+            )
+        return self._current_result(
+            session_id,
+            "validation_failed",
+            _canonical_json(journal.get("diagnostics", [])),
         )
 
     def _run_target_guard(self) -> bool:
@@ -326,33 +404,36 @@ class ReportLifecycle:
                 "호출하지 않습니다"
             )
         try:
-            completed = subprocess.run(
+            completed = bounded_subprocess.run(
                 command,
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                check=False,
-                shell=False,
                 timeout=TARGET_GUARD_TIMEOUT_SECONDS,
+                max_output_bytes=MAX_TARGET_GUARD_OUTPUT,
             )
-        except (OSError, subprocess.SubprocessError) as error:
+        except OSError as error:
             raise RuntimeError(
                 f"target guard infrastructure failure: {type(error).__name__}"
             ) from error
-        if (
-            len(completed.stdout) > MAX_TARGET_GUARD_OUTPUT
-            or len(completed.stderr) > MAX_TARGET_GUARD_OUTPUT
-        ):
+        if completed.timed_out:
+            raise RuntimeError("target guard timeout")
+        if completed.output_exceeded:
             raise RuntimeError("target guard output limit을 초과했습니다")
         return completed.returncode == 0
 
-    def _rollback(self, previous: Path) -> None:
+    def _rollback(
+        self, previous: Path, *, had_canonical: bool
+    ) -> None:
         if previous.exists() or previous.is_symlink():
             if self.canonical_path.exists() or self.canonical_path.is_symlink():
                 self.canonical_path.unlink()
             os.replace(previous, self.canonical_path)
             _fsync_directory(self.canonical_path.parent)
-        elif self.canonical_path.exists() or self.canonical_path.is_symlink():
+        elif (
+            not had_canonical
+            and (
+                self.canonical_path.exists()
+                or self.canonical_path.is_symlink()
+            )
+        ):
             self.canonical_path.unlink()
             _fsync_directory(self.canonical_path.parent)
 
@@ -362,26 +443,67 @@ class ReportLifecycle:
         message: str,
     ) -> ToolResult:
         session_id = str(journal["session_id"])
+        idempotency_key = str(journal["idempotency_key"])
         candidate = Path(str(journal["candidate_path"]))
         previous = Path(str(journal["previous_path"]))
-        self._rollback(previous)
+        self._rollback(
+            previous,
+            had_canonical=bool(journal.get("had_canonical", False)),
+        )
+        self.crash_hook("rollback_completed")
         candidate.unlink(missing_ok=True)
-        version, coverage = self._transition(
-            session_id,
-            state=SessionState.FAILED,
-            event="FINALIZE_FAILED",
-            details={"message": message},
-        )
+
+        def operation(connection):
+            existing = connection.execute(
+                "SELECT result_json FROM finalize_results "
+                "WHERE session_id = ? AND idempotency_key = ?",
+                (session_id, idempotency_key),
+            ).fetchone()
+            if existing is not None:
+                return _result_from_json(existing["result_json"])
+            row = connection.execute(
+                "SELECT state, state_version FROM sessions "
+                "WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            version = row["state_version"]
+            if row["state"] != SessionState.FAILED.value:
+                version += 1
+                connection.execute(
+                    "UPDATE sessions SET state = ?, state_version = ?, "
+                    "updated_at = CURRENT_TIMESTAMP WHERE session_id = ?",
+                    (SessionState.FAILED.value, version, session_id),
+                )
+                connection.execute(
+                    "INSERT INTO audit_events("
+                    "session_id, event_type, state_version, details_json"
+                    ") VALUES (?, 'FINALIZE_FAILED', ?, ?)",
+                    (
+                        session_id,
+                        version,
+                        _canonical_json({"message": message}),
+                    ),
+                )
+            result = ToolResult(
+                "failed",
+                session_id,
+                SessionState.FAILED.value,
+                version,
+                None,
+                self._coverage(connection, session_id),
+                message,
+            )
+            connection.execute(
+                "INSERT INTO finalize_results("
+                "session_id, idempotency_key, result_json"
+                ") VALUES (?, ?, ?)",
+                (session_id, idempotency_key, _result_json(result)),
+            )
+            return result
+
+        result = self.store.transact(operation)
         self.journal_path.unlink(missing_ok=True)
-        return ToolResult(
-            "failed",
-            session_id,
-            SessionState.FAILED.value,
-            version,
-            None,
-            coverage,
-            message,
-        )
+        return result
 
     def _complete(
         self, journal: dict[str, object]
@@ -449,6 +571,24 @@ class ReportLifecycle:
         previous = Path(str(journal["previous_path"]))
         phase = str(journal["phase"])
 
+        if phase == "begin_pending":
+            begun = self._begin(
+                session_id,
+                int(journal["expected_state_version"]),
+            )
+            if isinstance(begun, ToolResult):
+                self.journal_path.unlink(missing_ok=True)
+                _fsync_directory(self.journal_path.parent)
+                return begun
+            state_version, _ = begun
+            self.crash_hook("begin_started")
+            journal = self._journal(
+                journal,
+                "candidate_write_pending",
+                assembling_state_version=state_version,
+            )
+            phase = "candidate_write_pending"
+
         if phase == "candidate_write_pending":
             document = self.document_loader(session_id)
             rendered = self.renderer(document, self.contract)
@@ -466,7 +606,9 @@ class ReportLifecycle:
                     event="CANDIDATE_RENDERED",
                 )
             diagnostics = self._candidate_diagnostics(
-                candidate, str(journal["mode"])
+                candidate,
+                str(journal["mode"]),
+                self.document_loader(session_id),
             )
             if diagnostics:
                 journal = self._journal(
@@ -478,23 +620,8 @@ class ReportLifecycle:
                     ],
                 )
                 candidate.unlink(missing_ok=True)
-                version, coverage = self._transition(
-                    session_id,
-                    state=SessionState.REPAIRING,
-                    event="CANDIDATE_REJECTED",
-                    details={
-                        "diagnostics": journal["diagnostics"],
-                    },
-                )
-                return ToolResult(
-                    "validation_failed",
-                    session_id,
-                    SessionState.REPAIRING.value,
-                    version,
-                    None,
-                    coverage,
-                    _canonical_json(journal["diagnostics"]),
-                )
+                self.crash_hook("validation_failure_recorded")
+                return self._validation_failure_result(journal)
             journal = self._journal(journal, "swap_pending")
             phase = "swap_pending"
 
@@ -538,11 +665,7 @@ class ReportLifecycle:
             return result
 
         if phase == "validation_failed":
-            return self._current_result(
-                session_id,
-                "validation_failed",
-                _canonical_json(journal.get("diagnostics", [])),
-            )
+            return self._validation_failure_result(journal)
         raise RuntimeError(f"지원하지 않는 finalize journal phase: {phase}")
 
     def _cleanup_completed_journal(
@@ -567,6 +690,19 @@ class ReportLifecycle:
         expected_state_version: int,
         idempotency_key: str,
     ) -> ToolResult:
+        with self._workspace_lock():
+            return self._finalize(
+                session_id,
+                expected_state_version,
+                idempotency_key,
+            )
+
+    def _finalize(
+        self,
+        session_id: str,
+        expected_state_version: int,
+        idempotency_key: str,
+    ) -> ToolResult:
         existing = self._existing_result(session_id, idempotency_key)
         if existing is not None:
             self._cleanup_completed_journal(
@@ -575,6 +711,28 @@ class ReportLifecycle:
             return existing
 
         journal = self._load_journal()
+        binding_error = self._target_binding_error(session_id)
+        if binding_error is not None:
+            if journal is None:
+                candidate = self.candidate_path(session_id)
+                previous = self.previous_path(session_id)
+                journal = self._journal(
+                    {
+                        "session_id": session_id,
+                        "expected_state_version": expected_state_version,
+                        "idempotency_key": idempotency_key,
+                        "candidate_path": str(candidate),
+                        "previous_path": str(previous),
+                        "canonical_path": str(self.canonical_path),
+                        "mode": self.store.load(session_id).mode,
+                        "had_canonical": (
+                            self.canonical_path.exists()
+                            or self.canonical_path.is_symlink()
+                        ),
+                    },
+                    "target_binding_failed",
+                )
+            return self._terminal_failure(journal, binding_error)
         if journal is not None:
             if (
                 journal.get("session_id") != session_id
@@ -589,10 +747,6 @@ class ReportLifecycle:
                 )
             return self._resume(journal)
 
-        begun = self._begin(session_id, expected_state_version)
-        if isinstance(begun, ToolResult):
-            return begun
-        state_version, _ = begun
         candidate = self.candidate_path(session_id)
         previous = self.previous_path(session_id)
         journal = self._journal(
@@ -604,8 +758,11 @@ class ReportLifecycle:
                 "previous_path": str(previous),
                 "canonical_path": str(self.canonical_path),
                 "mode": self.store.load(session_id).mode,
-                "assembling_state_version": state_version,
+                "had_canonical": (
+                    self.canonical_path.exists()
+                    or self.canonical_path.is_symlink()
+                ),
             },
-            "candidate_write_pending",
+            "begin_pending",
         )
         return self._resume(journal)

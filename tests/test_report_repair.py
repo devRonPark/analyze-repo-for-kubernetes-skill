@@ -1,4 +1,5 @@
 import json
+from hashlib import sha256
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
@@ -9,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import report_contract
+import report_diagnostics
 from report_diagnostics import Diagnostic
 from report_lifecycle import ReportLifecycle
 import report_records
@@ -99,6 +101,33 @@ class RepairUnitMappingTests(unittest.TestCase):
 
         self.assertEqual(repair, (self.units[2],))
 
+    def test_multiple_diagnostics_for_one_unit_preserve_all_fields(self):
+        diagnostics = (
+            Diagnostic(
+                "MISSING_REQUIRED_FIELD",
+                "component_runtime",
+                "deployable:web",
+                "startup_command",
+                "startup command missing",
+            ),
+            Diagnostic(
+                "INVALID_FIELD_FORMAT",
+                "component_runtime",
+                "deployable:web",
+                "runtime",
+                "runtime format invalid",
+            ),
+        )
+
+        repair = report_work_units.diagnostics_to_repair_units(
+            diagnostics, self.units
+        )
+
+        self.assertEqual(
+            repair[0].required_fields,
+            ("runtime", "startup_command"),
+        )
+
     def test_infrastructure_diagnostic_has_no_repair_unit(self):
         diagnostics = (
             Diagnostic(
@@ -115,6 +144,73 @@ class RepairUnitMappingTests(unittest.TestCase):
         )
 
         self.assertEqual(repair, ())
+
+    def test_document_resolver_uses_authoritative_subject_and_edge_ids(self):
+        document = report_records.ReportDocument(
+            mode="summary",
+            subjects=(
+                report_records.Subject(
+                    "deployable:application-main",
+                    "deployable",
+                    "JPetStore",
+                ),
+                report_records.Subject(
+                    "dependency:database",
+                    "dependency",
+                    "Database",
+                ),
+            ),
+            claims=(),
+            relationships=(
+                report_records.Relationship(
+                    "edge:application:database",
+                    "deployable:application-main",
+                    "dependency:database",
+                    (("mechanism", "JDBC"),),
+                    "confirmed",
+                    ("docker-compose.yml:7",),
+                    "",
+                ),
+            ),
+        )
+        diagnostics = (
+            Diagnostic(
+                "MISSING_REQUIRED_FIELD",
+                "component_runtime",
+                "deployable:jpetstore",
+                "startup_command",
+                (
+                    "### 배포 대상: JPetStore에 필수 속성이 없습니다: "
+                    "운영 기동 명령"
+                ),
+            ),
+            Diagnostic(
+                "EVIDENCE_FILE_NOT_FOUND",
+                "",
+                "",
+                "",
+                (
+                    "인용 파일이 저장소에 없습니다: "
+                    "docker-compose.yml:7"
+                ),
+            ),
+        )
+
+        resolved = report_diagnostics.resolve_document_diagnostics(
+            diagnostics,
+            document,
+            report_contract.load_report_contract(),
+        )
+
+        self.assertEqual(
+            resolved[0].subject_id,
+            "deployable:application-main",
+        )
+        self.assertEqual(resolved[1].section_key, "relationships")
+        self.assertEqual(
+            resolved[1].subject_id,
+            "edge:application:database",
+        )
 
 
 class ReportRepairLifecycleTests(unittest.TestCase):
@@ -166,7 +262,7 @@ class ReportRepairLifecycleTests(unittest.TestCase):
                 session_id="session-1",
                 idempotency_key="start-key",
                 analysis_snapshot_id="snapshot-1",
-                target_hash="a" * 64,
+                target_hash=sha256(self.target.read_bytes()).hexdigest(),
                 mode="summary",
                 analysis_snapshot=AnalysisSnapshot(
                     mode="summary",

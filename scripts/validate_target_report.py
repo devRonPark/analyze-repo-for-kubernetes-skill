@@ -4,10 +4,10 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-import subprocess
 import sys
 from typing import Any
 
+import bounded_subprocess
 
 MAX_DIAGNOSTIC_CHARS = 32_768
 VALIDATION_TIMEOUT_SECONDS = 30
@@ -98,20 +98,22 @@ def validate(target_json: Path) -> int:
 
     alternates = alternate_report_files(report)
     try:
-        completed = subprocess.run(
+        completed = bounded_subprocess.run(
             command,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            check=False,
-            shell=False,
             timeout=VALIDATION_TIMEOUT_SECONDS,
+            max_output_bytes=MAX_DIAGNOSTIC_CHARS,
         )
-    except (OSError, subprocess.SubprocessError) as error:
+    except OSError as error:
         print(
             "실패: canonical report validator infrastructure failure: "
             f"{type(error).__name__}"
         )
+        return 1
+    if completed.timed_out:
+        print("실패: canonical report validator timeout")
+        return 1
+    if completed.output_exceeded:
+        print("실패: canonical report validator output limit을 초과했습니다")
         return 1
 
     failed = completed.returncode != 0 or bool(alternates)

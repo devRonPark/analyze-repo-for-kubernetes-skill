@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import re
 
 import report_contract
+import report_records
 
 
 @dataclass(frozen=True)
@@ -98,3 +99,74 @@ def from_message(message: str) -> Diagnostic:
     else:
         code = "VALIDATION_ERROR"
     return Diagnostic(code, "", "", "", message)
+
+
+EVIDENCE_REFERENCE = re.compile(
+    r"(?<![0-9A-Za-z_.-])(?P<reference>[0-9A-Za-z_./-]+:[1-9]\d*)"
+)
+
+
+def resolve_document_diagnostics(
+    diagnostics: tuple[Diagnostic, ...],
+    document: report_records.ReportDocument,
+    contract: report_contract.ReportContract,
+) -> tuple[Diagnostic, ...]:
+    actual_subject_ids = {
+        subject.subject_id for subject in document.subjects
+    }
+    subjects_by_display: dict[str, list[str]] = {}
+    for subject in document.subjects:
+        subjects_by_display.setdefault(subject.display_name, []).append(
+            subject.subject_id
+        )
+    group_by_field = {
+        field.field_id: group
+        for group, fields in contract.field_groups.items()
+        for field in fields
+    }
+
+    resolved = []
+    for diagnostic in diagnostics:
+        item = diagnostic
+        component = COMPONENT_FIELD.match(item.message)
+        if (
+            component is not None
+            and item.subject_id not in actual_subject_ids
+        ):
+            matches = subjects_by_display.get(
+                component.group("subject"), []
+            )
+            if len(matches) == 1:
+                item = replace(item, subject_id=matches[0])
+
+        references = {
+            match.group("reference")
+            for match in EVIDENCE_REFERENCE.finditer(item.message)
+        }
+        if references and not item.section_key:
+            record_matches: list[Diagnostic] = []
+            for claim in document.claims:
+                if references.intersection(claim.evidence):
+                    record_matches.append(
+                        replace(
+                            item,
+                            section_key=group_by_field.get(
+                                claim.field, ""
+                            ),
+                            subject_id=claim.subject_id,
+                            field=claim.field,
+                        )
+                    )
+            for relationship in document.relationships:
+                if references.intersection(relationship.evidence):
+                    record_matches.append(
+                        replace(
+                            item,
+                            section_key="relationships",
+                            subject_id=relationship.edge_id,
+                        )
+                    )
+            if len(record_matches) == 1:
+                item = record_matches[0]
+        resolved.append(item)
+    return tuple(resolved)

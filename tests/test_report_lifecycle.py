@@ -1,7 +1,11 @@
+import fcntl
 import json
+from hashlib import sha256
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
+import threading
+import time
 import unittest
 
 
@@ -41,13 +45,18 @@ class ReportLifecycleTests(unittest.TestCase):
         self.addCleanup(self.store.close)
         self.document = report_records.load_report_document(DOCUMENT_PATH)
         self.contract = report_contract.load_report_contract()
+        self.canonical = self.workspace / "report.md"
+        self.old_bytes = b"# existing canonical\n"
+        self.canonical.write_bytes(self.old_bytes)
+        self.target = self.workspace / "target.json"
+        self.write_target()
         self.service = ReportSessionService(self.store)
         started = self.service.start(
             StartCommand(
                 session_id="session-1",
                 idempotency_key="start-key",
                 analysis_snapshot_id="snapshot-1",
-                target_hash="a" * 64,
+                target_hash=sha256(self.target.read_bytes()).hexdigest(),
                 mode="summary",
                 analysis_snapshot=AnalysisSnapshot(
                     mode="summary",
@@ -61,11 +70,6 @@ class ReportLifecycleTests(unittest.TestCase):
         )
         self.assertEqual(started.state, "READY")
         self.initial_version = started.state_version
-        self.canonical = self.workspace / "report.md"
-        self.old_bytes = b"# existing canonical\n"
-        self.canonical.write_bytes(self.old_bytes)
-        self.target = self.workspace / "target.json"
-        self.write_target()
 
     def write_target(self):
         self.target.write_text(
@@ -176,6 +180,71 @@ class ReportLifecycleTests(unittest.TestCase):
         self.assertEqual(result.status, "complete")
         self.assertEqual(result.state, "COMPLETE")
 
+    def test_restart_after_begin_transition_recovers_same_finalize(self):
+        def crash(phase):
+            if phase == "begin_started":
+                raise SimulatedCrash("process stopped after begin")
+
+        lifecycle = self.lifecycle(crash_hook=crash)
+        with self.assertRaises(SimulatedCrash):
+            self.finalize(lifecycle)
+        self.assertEqual(
+            self.store.load("session-1").state.value,
+            "ASSEMBLING",
+        )
+
+        result = self.finalize(self.lifecycle())
+
+        self.assertEqual(result.status, "complete")
+        self.assertEqual(result.state, "COMPLETE")
+
+    def test_restart_after_rollback_preserves_restored_canonical(self):
+        (self.workspace / "alternate-report.md").write_text(
+            "# alternate\n", encoding="utf-8"
+        )
+
+        def crash(phase):
+            if phase == "rollback_completed":
+                raise SimulatedCrash("process stopped after rollback")
+
+        lifecycle = self.lifecycle(crash_hook=crash)
+        with self.assertRaises(SimulatedCrash):
+            self.finalize(lifecycle)
+        self.assertEqual(self.canonical.read_bytes(), self.old_bytes)
+
+        result = self.finalize(self.lifecycle())
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.state, "FAILED")
+        self.assertEqual(self.canonical.read_bytes(), self.old_bytes)
+
+    def test_restart_after_validation_diagnostics_recovers_repairing(self):
+        def crash(phase):
+            if phase == "validation_failure_recorded":
+                raise SimulatedCrash(
+                    "process stopped after diagnostics journal"
+                )
+
+        lifecycle = self.lifecycle(
+            renderer=lambda document, contract: "# invalid candidate\n",
+            crash_hook=crash,
+        )
+        with self.assertRaises(SimulatedCrash):
+            self.finalize(lifecycle)
+        self.assertEqual(
+            self.store.load("session-1").state.value,
+            "VALIDATING",
+        )
+
+        result = self.finalize(
+            self.lifecycle(
+                renderer=lambda document, contract: "# invalid candidate\n"
+            )
+        )
+
+        self.assertEqual(result.status, "validation_failed")
+        self.assertEqual(result.state, "REPAIRING")
+
     def test_duplicate_finalize_returns_same_artifact_without_new_version(self):
         first = self.finalize()
         version = self.store.load("session-1").state_version
@@ -200,6 +269,88 @@ class ReportLifecycleTests(unittest.TestCase):
         self.assertFalse(
             (self.workspace / ".candidate-session-1.tmp").exists()
         )
+
+    def test_changed_target_hash_fails_before_candidate_write(self):
+        self.target.write_text(
+            self.target.read_text(encoding="utf-8") + "\n",
+            encoding="utf-8",
+        )
+
+        result = self.finalize()
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.state, "FAILED")
+        self.assertIn("target hash", result.message)
+        self.assertEqual(self.canonical.read_bytes(), self.old_bytes)
+        self.assertFalse(
+            (self.workspace / ".candidate-session-1.tmp").exists()
+        )
+
+    def test_canonical_path_outside_target_workspace_is_rejected(self):
+        outside = self.workspace.parent / "outside-analysis.md"
+        self.target.write_text(
+            json.dumps(
+                {
+                    "mode": "summary",
+                    "artifacts": {"report": str(outside)},
+                    "validation": {
+                        "command": [
+                            sys.executable,
+                            str(TARGET_GUARD),
+                            str(self.target),
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(ValueError, "workspace"):
+            self.lifecycle()
+
+    def test_finalize_waits_for_cross_process_workspace_lock(self):
+        lock_path = (
+            self.canonical.parent / ".report-session/finalize.lock"
+        )
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_stream = lock_path.open("a+b")
+        self.addCleanup(lock_stream.close)
+        fcntl.flock(lock_stream.fileno(), fcntl.LOCK_EX)
+        started = threading.Event()
+        outcomes = []
+
+        def finalize_in_worker():
+            worker_store = SQLiteReportSessionStore(self.database)
+            try:
+                lifecycle = ReportLifecycle(
+                    store=worker_store,
+                    target_json=self.target,
+                    document_loader=lambda session_id: self.document,
+                    contract=self.contract,
+                )
+                started.set()
+                outcomes.append(
+                    lifecycle.finalize(
+                        "session-1",
+                        self.initial_version,
+                        "worker-finalize",
+                    )
+                )
+            finally:
+                worker_store.close()
+
+        worker = threading.Thread(target=finalize_in_worker)
+        worker.start()
+        self.assertTrue(started.wait(timeout=1))
+        time.sleep(0.1)
+        self.assertTrue(worker.is_alive())
+        self.assertEqual(self.canonical.read_bytes(), self.old_bytes)
+
+        fcntl.flock(lock_stream.fileno(), fcntl.LOCK_UN)
+        worker.join(timeout=5)
+
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(outcomes[0].status, "complete")
 
 
 if __name__ == "__main__":

@@ -286,6 +286,15 @@ class ReportSessionService:
             }
         )
 
+    def load_document(
+        self, session_id: str
+    ) -> report_records.ReportDocument:
+        return self.store.transact(
+            lambda connection: self._load_document(
+                connection, session_id
+            )
+        )
+
     def _insert_document(
         self,
         connection: sqlite3.Connection,

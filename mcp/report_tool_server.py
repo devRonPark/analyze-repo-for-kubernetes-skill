@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from report_model_protocol import CompleteToolCall
+from report_lifecycle import ReportLifecycle
 from report_session_service import ReportSessionService
 from report_session_store import SQLiteReportSessionStore
 from report_tool_handler import ReportToolHandler
@@ -167,8 +168,16 @@ class ReportToolServer:
 
 def serve() -> int:
     store = SQLiteReportSessionStore(_database_path())
+    service = ReportSessionService(store)
+    target_json = os.environ.get("REPORT_TARGET_JSON")
+    if target_json:
+        service.lifecycle = ReportLifecycle(
+            store=store,
+            target_json=Path(target_json),
+            document_loader=service.load_document,
+        )
     server = ReportToolServer(
-        ReportToolHandler(ReportSessionService(store))
+        ReportToolHandler(service)
     )
     try:
         for raw_line in sys.stdin:

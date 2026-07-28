@@ -83,6 +83,14 @@ def diagnostics_to_repair_units(
                 else unit.required_fields
             )
             if fields:
+                existing = selected.get(unit.unit_id)
+                if existing is not None:
+                    combined = set(existing.required_fields) | set(fields)
+                    fields = tuple(
+                        field
+                        for field in unit.required_fields
+                        if field in combined
+                    )
                 selected[unit.unit_id] = WorkUnit(
                     unit.unit_id,
                     unit.unit_type,
