@@ -63,6 +63,7 @@ class ToolResult:
     lease: Lease | None
     coverage: tuple[int, int]
     message: str = ""
+    artifact: Mapping[str, object] | None = None
 
 
 def _canonical_json(value: object) -> str:
@@ -130,6 +131,7 @@ def _result_json(result: ToolResult) -> str:
             "lease": _lease_to_dict(result.lease),
             "coverage": result.coverage,
             "message": result.message,
+            "artifact": result.artifact,
         }
     )
 
@@ -144,6 +146,7 @@ def _result_from_json(raw: str) -> ToolResult:
         lease=_lease_from_dict(payload["lease"]),
         coverage=tuple(payload["coverage"]),
         message=payload["message"],
+        artifact=payload.get("artifact"),
     )
 
 
