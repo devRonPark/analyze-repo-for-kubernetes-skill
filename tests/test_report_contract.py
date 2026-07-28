@@ -2,11 +2,13 @@ from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import report_contract
+import validate_report
 
 
 class ReportContractTests(unittest.TestCase):
@@ -46,3 +48,23 @@ class ReportContractTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "detailed"):
                 report_contract.load_report_contract(path)
+
+    def test_validator_new_section_constants_come_from_report_contract(self):
+        summary_headings = ("## contract summary",)
+        detailed_headings = ("## contract detailed",)
+        with patch.object(
+            report_contract,
+            "headings_for",
+            side_effect=lambda mode: summary_headings if mode == "summary" else detailed_headings,
+        ), patch.object(
+            report_contract,
+            "title_for",
+            side_effect=lambda mode: f"contract {mode}",
+        ):
+            import importlib
+
+            reloaded = importlib.reload(validate_report)
+            self.assertEqual(tuple(reloaded.NEW_SUMMARY_SECTIONS), summary_headings)
+            self.assertEqual(tuple(reloaded.NEW_DETAILED_SECTIONS), detailed_headings)
+            self.assertEqual(reloaded.NEW_REPORT_TITLES["summary"], "contract summary")
+        importlib.reload(validate_report)
