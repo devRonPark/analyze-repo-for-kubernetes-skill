@@ -63,7 +63,7 @@
 8. 완료 규칙
 - backend만 required coverage 충족 여부를 판단한다.
 - backend가 next_action=finalize를 반환하기 전에는 finalize를 호출하지 마라.
-- backend가 state=COMPLETE를 반환하면 artifact_path, sha256, validation status만 짧게 전달하라.
+- backend가 state=COMPLETE를 반환하면 artifact_path, sha256, byte size, validation status만 짧게 전달하라.
 - 완성된 Markdown 보고서 전체를 모델 응답으로 다시 생성하거나 복사하지 마라.
 
 위 규칙 중 하나라도 충족할 수 없으면 설명문을 출력하지 말고 report_session_sync를 호출하여 authoritative 상태를 다시 받아라.

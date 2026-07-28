@@ -380,6 +380,12 @@ class SkillPackageTests(unittest.TestCase):
         ):
             self.assertIn(forbidden_action, directive)
 
+        self.assertIn(
+            "backend가 state=COMPLETE를 반환하면 artifact_path, sha256, "
+            "byte size, validation status만 짧게 전달하라.",
+            directive,
+        )
+
         for lifecycle_tool in (
             "report_session_start",
             "report_chunk_submit",
