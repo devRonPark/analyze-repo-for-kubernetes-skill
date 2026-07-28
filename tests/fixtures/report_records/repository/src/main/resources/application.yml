@@ -1,0 +1,10 @@
+server:
+  port: 8080
+spring:
+  datasource:
+    url: jdbc:mysql://mysql:3306/jpetstore
+    username: jpetstore
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+management:
+  endpoints.web.exposure.include: health,info

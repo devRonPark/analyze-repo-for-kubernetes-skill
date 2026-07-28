@@ -245,7 +245,10 @@ def load_report_document(path: Path) -> ReportDocument:
 
 
 def validate_document(
-    document: ReportDocument, contract: report_contract.ReportContract
+    document: ReportDocument,
+    contract: report_contract.ReportContract,
+    *,
+    repository_root: Path | None = None,
 ) -> tuple[RecordDiagnostic, ...]:
     diagnostics: list[RecordDiagnostic] = []
     try:
@@ -276,4 +279,59 @@ def validate_document(
                     claim.claim_id,
                 )
             )
+    if repository_root is not None:
+        root = repository_root.resolve()
+        if not root.is_dir():
+            diagnostics.append(
+                RecordDiagnostic(
+                    "MISSING_REPOSITORY_ROOT",
+                    f"repository root를 찾을 수 없습니다: {repository_root}",
+                )
+            )
+        else:
+            evidence_records = [
+                (claim.claim_id, claim.evidence) for claim in document.claims
+            ] + [
+                (relationship.edge_id, relationship.evidence)
+                for relationship in document.relationships
+            ]
+            for record_id, references in evidence_records:
+                for reference in references:
+                    match = FILE_LINE_REFERENCE.fullmatch(reference)
+                    if match is None:
+                        continue
+                    candidate = (root / match.group("path")).resolve()
+                    try:
+                        candidate.relative_to(root)
+                    except ValueError:
+                        diagnostics.append(
+                            RecordDiagnostic(
+                                "EVIDENCE_OUTSIDE_REPOSITORY",
+                                f"evidence가 repository 밖을 가리킵니다: {reference}",
+                                record_id,
+                            )
+                        )
+                        continue
+                    if not candidate.is_file():
+                        diagnostics.append(
+                            RecordDiagnostic(
+                                "MISSING_EVIDENCE_FILE",
+                                f"evidence file을 찾을 수 없습니다: {reference}",
+                                record_id,
+                            )
+                        )
+                        continue
+                    line_count = len(
+                        candidate.read_text(
+                            encoding="utf-8", errors="replace"
+                        ).splitlines()
+                    )
+                    if int(match.group("line")) > line_count:
+                        diagnostics.append(
+                            RecordDiagnostic(
+                                "EVIDENCE_LINE_OUT_OF_RANGE",
+                                f"evidence line이 파일 범위를 벗어났습니다: {reference}",
+                                record_id,
+                            )
+                        )
     return tuple(sorted(diagnostics, key=lambda item: (item.record_id, item.code)))
