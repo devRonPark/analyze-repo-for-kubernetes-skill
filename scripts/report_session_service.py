@@ -914,10 +914,35 @@ class ReportSessionService:
         self,
         session_id: str,
         diagnostics: tuple[Diagnostic, ...],
+        *,
+        idempotency_key: str | None = None,
     ) -> ToolResult:
         details = [diagnostic.to_dict() for diagnostic in diagnostics]
 
         def operation(connection: sqlite3.Connection) -> ToolResult:
+            if idempotency_key is not None:
+                existing = connection.execute(
+                    "SELECT result_json FROM finalize_results "
+                    "WHERE session_id = ? AND idempotency_key = ?",
+                    (session_id, idempotency_key),
+                ).fetchone()
+                if existing is not None:
+                    return _result_from_json(existing["result_json"])
+
+            def persist(result: ToolResult) -> ToolResult:
+                if idempotency_key is not None:
+                    connection.execute(
+                        "INSERT INTO finalize_results("
+                        "session_id, idempotency_key, result_json"
+                        ") VALUES (?, ?, ?)",
+                        (
+                            session_id,
+                            idempotency_key,
+                            _result_json(result),
+                        ),
+                    )
+                return result
+
             session = connection.execute(
                 "SELECT state, state_version FROM sessions "
                 "WHERE session_id = ?",
@@ -941,13 +966,15 @@ class ReportSessionService:
                         (session_id,),
                     ).fetchone()[0],
                 )
-                return ToolResult(
-                    "lease_issued",
-                    session_id,
-                    session["state"],
-                    session["state_version"],
-                    active,
-                    (completed, total),
+                return persist(
+                    ToolResult(
+                        "lease_issued",
+                        session_id,
+                        session["state"],
+                        session["state_version"],
+                        active,
+                        (completed, total),
+                    )
                 )
             if session["state"] != SessionState.REPAIRING.value:
                 completed, total = (
@@ -1023,14 +1050,16 @@ class ReportSessionService:
                         (session_id,),
                     ).fetchone()[0],
                 )
-                return ToolResult(
-                    "failed",
-                    session_id,
-                    SessionState.FAILED.value,
-                    version,
-                    None,
-                    (completed, total),
-                    reason,
+                return persist(
+                    ToolResult(
+                        "failed",
+                        session_id,
+                        SessionState.FAILED.value,
+                        version,
+                        None,
+                        (completed, total),
+                        reason,
+                    )
                 )
 
             self._remove_repair_records(
@@ -1087,13 +1116,15 @@ class ReportSessionService:
                     (session_id,),
                 ).fetchone()[0],
             )
-            return ToolResult(
-                "lease_issued",
-                session_id,
-                SessionState.COLLECTING.value,
-                version,
-                lease,
-                (completed, total),
+            return persist(
+                ToolResult(
+                    "lease_issued",
+                    session_id,
+                    SessionState.COLLECTING.value,
+                    version,
+                    lease,
+                    (completed, total),
+                )
             )
 
         return self.store.transact(operation)
@@ -1131,7 +1162,9 @@ class ReportSessionService:
                 ),
             )
         routed = self.route_repair_diagnostics(
-            command.session_id, diagnostics
+            command.session_id,
+            diagnostics,
+            idempotency_key=command.idempotency_key,
         )
         self.lifecycle.finish_repair_routing(command.session_id)
         return routed

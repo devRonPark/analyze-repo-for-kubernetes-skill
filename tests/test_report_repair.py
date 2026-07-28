@@ -223,6 +223,10 @@ class ReportRepairLifecycleTests(unittest.TestCase):
             ),
         )
         self.assertEqual(self.canonical.read_bytes(), self.old_bytes)
+        duplicate = self.service.finalize(
+            FinalizeToolCommand("session-1", 0, "finalize-1")
+        )
+        self.assertEqual(duplicate, failed)
 
         repair_claim = next(
             claim
