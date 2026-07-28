@@ -11,6 +11,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SKILL_ROOT = ROOT / "skills" / "analyze-repo-for-kubernetes"
 EVAL_PATH = ROOT / "scripts" / "eval_trigger_precision.py"
 CASES_PATH = ROOT / "tests" / "fixtures" / "eval" / "trigger_cases.json"
 
@@ -126,7 +127,7 @@ class TriggerPrecisionEvalTests(unittest.TestCase):
             self.assertEqual(payload["metrics"]["precision"], 6 / 7)
 
     def test_skill_description_declares_non_target_boundary(self):
-        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         description = re.search(r"^description: (.+)$", skill, re.MULTILINE).group(1)
 
         for required in [

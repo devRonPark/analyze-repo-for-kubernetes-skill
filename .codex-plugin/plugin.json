@@ -1,0 +1,35 @@
+{
+  "name": "analyze-repo-for-kubernetes",
+  "version": "0.1.0",
+  "description": "Analyze application repositories for Kubernetes migration readiness with evidence-backed reports.",
+  "author": {
+    "name": "devRonPark",
+    "url": "https://github.com/devRonPark"
+  },
+  "homepage": "https://github.com/devRonPark/analyze-repo-for-kubernetes-skill",
+  "repository": "https://github.com/devRonPark/analyze-repo-for-kubernetes-skill",
+  "license": "MIT",
+  "keywords": [
+    "kubernetes",
+    "repository-analysis",
+    "migration-readiness",
+    "qwen"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Kubernetes 저장소 분석기",
+    "shortDescription": "근거 기반 Kubernetes 이관 준비 상태 분석",
+    "longDescription": "애플리케이션 저장소의 실행 구조, 설정, 의존성과 Kubernetes 설계 입력 준비 상태를 근거와 함께 분석합니다.",
+    "developerName": "devRonPark",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/devRonPark/analyze-repo-for-kubernetes-skill",
+    "defaultPrompt": [
+      "이 저장소의 Kubernetes 이관 준비 상태를 근거와 함께 분석해줘."
+    ]
+  }
+}

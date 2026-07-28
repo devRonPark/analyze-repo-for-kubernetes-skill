@@ -13,6 +13,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import normalize_report
+import validate_plugin_package
 
 
 REQUIRED_FIELDS = {
@@ -109,18 +110,68 @@ def compare_normalized(actual: dict, expected_payload: dict) -> list[str]:
     return differences
 
 
+def load_fixture(path: Path) -> tuple[dict | None, str | None]:
+    try:
+        return json.loads(path.read_text(encoding="utf-8")), None
+    except (OSError, json.JSONDecodeError) as error:
+        return None, f"fixture를 읽을 수 없습니다: {error}"
+
+
+def validate_fixture_payload(payload: dict) -> list[str]:
+    if "cases" in payload:
+        return validate_static_fixture_schema(payload)
+    return validate_black_box_expected_schema(payload)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="고정된 Skill 출력 회귀 fixture를 검증합니다.")
-    parser.add_argument("fixture", type=Path, help="expected.json 또는 black_box_expected.json fixture 경로")
+    parser.add_argument(
+        "fixture",
+        type=Path,
+        help="Plugin root 또는 expected.json/black_box_expected.json fixture 경로",
+    )
     parser.add_argument("--actual-report", type=Path, help="생성된 Markdown report를 normalize해 expected와 비교합니다")
     parser.add_argument("--repo-root", type=Path, help="actual report file:line citation을 검증할 fixture repository root")
     parser.add_argument("--mode", choices=["summary", "detailed"], default="summary")
     args = parser.parse_args()
 
-    try:
-        payload = json.loads(args.fixture.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as error:
-        print(f"실패: fixture를 읽을 수 없습니다: {error}")
+    plugin_root = args.fixture.resolve() if args.fixture.is_dir() else SCRIPT_DIR.parent
+    package_errors = validate_plugin_package.validate_plugin_package(plugin_root)
+    if package_errors:
+        for error in package_errors:
+            print(f"실패: {error}")
+        return 1
+
+    if args.fixture.is_dir():
+        if args.actual_report is not None or args.repo_root is not None:
+            print("실패: Plugin root 회귀 검사에는 report 비교 옵션을 사용할 수 없습니다")
+            return 1
+        fixtures = (
+            plugin_root / "tests/fixtures/regression/expected.json",
+            plugin_root / "tests/fixtures/regression/black_box_expected.json",
+        )
+        errors: list[str] = []
+        for fixture in fixtures:
+            payload, load_error = load_fixture(fixture)
+            if load_error is not None:
+                errors.append(load_error)
+            elif payload is not None:
+                errors.extend(
+                    f"{fixture.name}: {error}"
+                    for error in validate_fixture_payload(payload)
+                )
+        if errors:
+            for error in errors:
+                print(f"실패: {error}")
+            return 1
+        print(
+            "성공: Plugin package와 repository regression fixture가 유효합니다."
+        )
+        return 0
+
+    payload, load_error = load_fixture(args.fixture)
+    if load_error is not None or payload is None:
+        print(f"실패: {load_error}")
         return 1
 
     if "cases" in payload:

@@ -6,9 +6,10 @@ compact. Detailed skill behavior belongs in `SKILL.md`, `references/`, `scripts/
 
 ## Project Context
 
-This repository maintains the `analyze-repo-for-kubernetes` skill. The skill
-analyzes application repositories for Kubernetes migration readiness, Docker
-Compose migration assessment, GitOps onboarding, and Kubernetes design inputs.
+This repository is the Plugin root for the `analyze-repo-for-kubernetes`
+Plugin. Its nested workflow Skill analyzes application repositories for
+Kubernetes migration readiness, Docker Compose migration assessment, GitOps
+onboarding, and Kubernetes design inputs.
 
 The skill produces analysis and minimum design inputs only. Do not use this
 repository to generate deployment manifests, edit Helm charts, troubleshoot live
@@ -17,16 +18,29 @@ this repository explicitly asks for that repository-maintenance work.
 
 ## Repository Map
 
-- `SKILL.md`: skill trigger boundary, high-level workflow, safety invariants, and
-  routing instructions.
-- `references/`: durable workflow, output, evidence, and contract references.
-- `scripts/`: deterministic helper scripts and validators.
+- `.codex-plugin/plugin.json`: Plugin identity and component discovery.
+- `skills/analyze-repo-for-kubernetes/SKILL.md`: Skill trigger boundary,
+  high-level workflow, safety invariants, and routing instructions.
+- `skills/analyze-repo-for-kubernetes/references/`: durable workflow, output,
+  evidence, and contract references.
+- `skills/analyze-repo-for-kubernetes/assets/`: Skill-local report templates and
+  compatibility assets.
+- `scripts/`: runtime-neutral deterministic helpers and validators shared by the
+  Plugin.
+- `contracts/`: machine-readable shared contracts when present.
+- `mcp/`: thin local MCP transport adapters when present.
 - `tests/`: unit and acceptance coverage for repository-analysis behavior.
 - `validation/`: report and regression validation assets.
 - `.github/`: GitHub issue, PR, and workflow configuration when present.
 
 Read the relevant files before changing behavior. Do not duplicate detailed
 system behavior in this file.
+
+Resolve the Plugin root from repository-level scripts. The nested Skill root is
+always `<Plugin root>/skills/analyze-repo-for-kubernetes`; Skill-local links stay
+relative to that directory. Qwen compatibility updates must run
+`scripts/update-qwen.sh` from the same Plugin checkout and preserve the symlink
+to that nested Skill.
 
 ## Required Workflow
 
@@ -112,9 +126,9 @@ numbers, re-check whether the work should be split.
 Run the smallest meaningful validation for the files changed. Common commands:
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m unittest discover -s tests -v
-PYTHONPATH=src python3 -m unittest tests.unit.test_scanner -v
-PYTHONPATH=src python3 -m unittest tests.acceptance.test_sample_repos_scanner -v
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
+python3 scripts/validate_plugin_package.py .
+python3 scripts/validate_regression.py .
 ```
 
 If validation cannot run, report the exact command and the blocking error. Do not

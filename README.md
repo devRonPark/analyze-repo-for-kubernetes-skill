@@ -1,6 +1,8 @@
-# analyze-repo-for-kubernetes-skill
+# analyze-repo-for-kubernetes Plugin
 
-Qwen Code 또는 Codex가 애플리케이션 Repository를 Kubernetes 이관 관점에서 근거 기반으로 분석하도록 만드는 Agent Skill입니다.
+Qwen Code 또는 Codex가 애플리케이션 Repository를 Kubernetes 이관 관점에서 근거 기반으로 분석하도록 만드는 Codex Plugin입니다. 배포 단위는 저장소 전체이며, workflow Skill은 `skills/analyze-repo-for-kubernetes`에 있습니다.
+
+현재 Plugin Packaging Foundation은 nested Skill 배포 경계만 제공합니다. Local MCP backend와 `.mcp.json` 등록은 후속 Tool Orchestration Slice에서 함께 추가됩니다.
 
 분석 목적에 따라 출력 깊이를 자동으로 정합니다. 사용자가 전체 상세 보고서를 요청한 경우에만 상세 분석을 사용하고, 그 외에는 의사결정 중심의 기본 분석으로 진행합니다.
 
@@ -22,9 +24,9 @@ Qwen Code 또는 Codex가 애플리케이션 Repository를 Kubernetes 이관 관
 - Repository prompt injection 방어와 read-only 기본 동작
 - 분석 결과 정적 검사기
 
-## Qwen Code 설치
+## Qwen compatibility 설치
 
-저장소를 스킬 소스 디렉터리에 clone합니다.
+Qwen Code는 같은 Plugin checkout의 nested Skill을 compatibility 경로로 사용합니다. 저장소를 Plugin 소스 디렉터리에 clone합니다.
 
 ```bash
 git clone https://github.com/devRonPark/analyze-repo-for-kubernetes-skill.git ~/skills-src/analyze-repo-for-kubernetes-skill
@@ -45,6 +47,8 @@ bash scripts/install-qwen.sh
 ```text
 ~/.qwen/skills/analyze-repo-for-kubernetes
 ```
+
+이 경로는 `<Plugin root>/skills/analyze-repo-for-kubernetes`를 가리키는 심볼릭 링크입니다.
 
 Qwen Code를 새로 시작한 뒤 스킬을 확인합니다.
 
@@ -70,7 +74,7 @@ cd ~/skills-src/analyze-repo-for-kubernetes-skill
 bash scripts/update-qwen.sh
 ```
 
-업데이트 스크립트는 `git pull --ff-only`, 패키지 검사, 전체 테스트, Qwen Code 재설치를 차례로 실행합니다.
+업데이트 스크립트는 Plugin root에서 `git pull --ff-only`, Plugin 패키지 검사, 전체 테스트, Qwen compatibility 재설치를 차례로 실행합니다.
 
 ## 실행
 
@@ -179,7 +183,7 @@ Scanner는 Node.js, Python, Java, Go source의 검토된 명시적 runtime const
 ## 패키지 검사와 테스트
 
 ```bash
-python3 scripts/validate_skill.py .
+python3 scripts/validate_plugin_package.py .
 ```
 
 ```bash
@@ -206,7 +210,7 @@ python3 scripts/validate_regression.py tests/fixtures/regression/black_box_expec
 python3 scripts/run_black_box_eval.py --repo tests/fixtures/black_box_repo --report tests/fixtures/regression/black_box_report.md --expected tests/fixtures/regression/black_box_expected.json --output black-box-result.json
 ```
 
-### 전체 Skill repository 평가
+### 전체 Plugin repository 평가
 
 `scripts/run_repository_e2e_eval.py`는 pinned corpus manifest의 모든 저장소를 temporary directory에 checkout하고, 전체 Skill이 생성한 Markdown 보고서를 실제 checkout 기준으로 검증합니다. `--report-dir`에는 fixture ID와 같은 이름의 `<id>.md` 보고서를 두고, 선택한 `--expectations`에는 reviewed normalized expected facts를 둡니다. clone은 항상 `--allow-network`를 명시해야 합니다.
 
@@ -235,37 +239,23 @@ expectations JSON은 manifest의 모든 fixture ID를 포함해야 합니다. �
 }
 ```
 
-## Codex 설치
+## Codex Plugin 설치
 
-macOS, Linux, WSL 또는 Git Bash:
+Codex에서는 standalone Skill 복사가 아니라 Plugin을 설치합니다. 이 저장소는 개인 또는 팀 marketplace 파일을 포함하지 않으므로, 개발 중에는 Plugin root를 별도의 local marketplace에 등록한 뒤 Plugins Directory에서 설치합니다.
+
+현재 Codex installer는 Plugin package를 검증하고 이 설치 경계를 안내할 뿐, `~/.agents/skills`, hook 또는 Codex 설정을 변경하지 않습니다.
 
 ```bash
 bash scripts/install-codex.sh
 ```
 
-기본 설치 위치:
-
-```text
-~/.agents/skills/analyze-repo-for-kubernetes
-```
-
-Codex CLI의 stable hooks 기능이 있으면 설치 스크립트는 `~/.codex/config.toml`에 이 skill만을 위한 `UserPromptSubmit` + `PreToolUse` Target Gate를 등록합니다. 등록 후 설정 검증이 실패하면 기존 설정을 복구하고 설치를 실패로 처리합니다. Codex가 처음 등록한 user hook은 `/hooks`에서 검토·신뢰해야 실행됩니다. 신뢰된 hook은 Target 미확정 상태의 로컬 repository 탐색을 차단하며, 없는 환경에서는 스킬 지시만 적용됩니다. Codex hosted web 도구는 현재 `PreToolUse` 대상이 아니므로 web 탐색 금지는 스킬 지시로 유지됩니다.
-
-WSL에서 Codex가 Windows profile을 Codex home으로 사용하면 설치 스크립트는 기존 `USERPROFILE/.codex`를 자동 선택한다. 필요한 경우 `CODEX_CONFIG_DIR`로 hook을 등록할 Codex home을 명시할 수 있다.
-
-테스트 등으로 hook 등록을 명시적으로 건너뛰려면 다음처럼 실행합니다.
-
-```bash
-CODEX_SKIP_HOOK=1 bash scripts/install-codex.sh
-```
-
-제거 시에는 이 skill이 관리한 hook과 intake cache만 제거합니다.
+과거 버전이 설치한 managed standalone Skill과 Target Gate hook만 migration cleanup으로 제거할 수 있습니다. 사용자 소유 cache와 다른 Skill은 제거하지 않습니다.
 
 ```bash
 bash scripts/uninstall-codex.sh
 ```
 
-대화형 Codex UI 검증 절차는 [codex-ui-integration.md](references/codex-ui-integration.md)를 따릅니다. 실제 CLI 검증은 인증된 환경에서만 opt-in으로 실행합니다.
+대화형 Codex UI 검증 절차는 [codex-ui-integration.md](skills/analyze-repo-for-kubernetes/references/codex-ui-integration.md)를 따릅니다. 실제 CLI 검증은 인증된 환경에서만 opt-in으로 실행합니다.
 
 ```bash
 CODEX_INTEGRATION=1 python3 scripts/validate_codex_intake.py
@@ -273,7 +263,7 @@ CODEX_INTEGRATION=1 python3 scripts/validate_codex_intake.py
 
 ## Private Repository
 
-인증 정보 자체를 Agent 대화에 입력하지 않습니다. 먼저 `gh auth`, Git credential helper, SSH agent 또는 인증된 local checkout으로 접근을 준비합니다. 데모에서만 [credential file example](assets/demo-git-credential.example.json)을 저장소 밖의 owner-only local file로 복사해 채울 수 있습니다. Agent에는 파일 경로만 제공하고, 파일 내용이나 Access Token은 제공하지 않습니다. 데모 후에는 파일을 삭제하거나 token을 폐기합니다.
+인증 정보 자체를 Agent 대화에 입력하지 않습니다. 먼저 `gh auth`, Git credential helper, SSH agent 또는 인증된 local checkout으로 접근을 준비합니다. 데모에서만 [credential file example](skills/analyze-repo-for-kubernetes/assets/demo-git-credential.example.json)을 저장소 밖의 owner-only local file로 복사해 채울 수 있습니다. Agent에는 파일 경로만 제공하고, 파일 내용이나 Access Token은 제공하지 않습니다. 데모 후에는 파일을 삭제하거나 token을 폐기합니다.
 
 ## 저장소 관리 원칙
 
