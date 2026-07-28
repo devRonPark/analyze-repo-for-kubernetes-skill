@@ -33,6 +33,7 @@ class Lease:
     max_argument_bytes: int
     max_claims: int
     max_relationships: int
+    allowed_fields: tuple[tuple[str, tuple[str, ...]], ...] = ()
     retry_count: int = 0
     no_progress_count: int = 0
     status: str = "ACTIVE"

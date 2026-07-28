@@ -10,7 +10,7 @@ from report_session_models import Lease, NewSession, SessionSnapshot, SessionSta
 
 
 T = TypeVar("T")
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
     session_id TEXT PRIMARY KEY,
@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS leases (
     session_id TEXT NOT NULL,
     lease_id TEXT NOT NULL,
     allowed_unit_ids_json TEXT NOT NULL,
+    allowed_fields_json TEXT NOT NULL DEFAULT '[]',
     output_token_budget INTEGER NOT NULL,
     max_argument_bytes INTEGER NOT NULL,
     max_claims INTEGER NOT NULL,
@@ -189,6 +190,7 @@ class SQLiteReportSessionStore:
                     session_id,
                     lease_id,
                     allowed_unit_ids_json,
+                    allowed_fields_json,
                     output_token_budget,
                     max_argument_bytes,
                     max_claims,
@@ -196,13 +198,18 @@ class SQLiteReportSessionStore:
                     retry_count,
                     no_progress_count,
                     status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     lease.session_id,
                     lease.lease_id,
                     json.dumps(
                         lease.allowed_unit_ids,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ),
+                    json.dumps(
+                        lease.allowed_fields,
                         ensure_ascii=False,
                         separators=(",", ":"),
                     ),
@@ -245,6 +252,10 @@ class SQLiteReportSessionStore:
                 max_argument_bytes=lease_row["max_argument_bytes"],
                 max_claims=lease_row["max_claims"],
                 max_relationships=lease_row["max_relationships"],
+                allowed_fields=tuple(
+                    (item[0], tuple(item[1]))
+                    for item in json.loads(lease_row["allowed_fields_json"])
+                ),
                 retry_count=lease_row["retry_count"],
                 no_progress_count=lease_row["no_progress_count"],
                 status=lease_row["status"],
