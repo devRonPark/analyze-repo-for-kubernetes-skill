@@ -263,7 +263,11 @@ class SkillPackageTests(unittest.TestCase):
 
     def test_package_validator_passes(self):
         result = subprocess.run(
-            ["python3", str(ROOT / "scripts/validate_skill.py"), str(ROOT)],
+            [
+                "python3",
+                str(ROOT / "scripts/validate_plugin_package.py"),
+                str(ROOT),
+            ],
             capture_output=True,
             text=True,
             check=False,
