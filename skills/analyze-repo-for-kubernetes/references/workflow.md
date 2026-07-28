@@ -105,6 +105,14 @@ Completion Gate에서 다음을 확인한다.
 
 Structured report mode는 evidence triage가 완료되고 immutable analysis snapshot이 생성된 뒤에만 시작한다. analysis completion handoff에는 `target_ref`, `target_sha256`, `analysis_snapshot_id`, `idempotency_key`가 반드시 포함되어야 한다.
 
+Analysis mode에서 deployable subject ID와 relationship edge ID를 확정한 뒤 다음 helper를 한 번 실행한다. 이 helper는 `target.json`의 mode를 사용해 bounded snapshot을 `.report-session/snapshots/<analysis_snapshot_id>.json`에 content-addressed bytes로 생성하고 stdout에는 네 handoff field만 반환한다.
+
+```text
+python3 <plugin-root>/scripts/report_start_handoff.py --target-ref <workspace>/target.json --deployable-subject-id <subject-id> --relationship-edge-id <edge-id>
+```
+
+필요한 각 subject와 edge에 해당 option을 반복한다. 동일 target과 ID 집합의 재실행은 동일 snapshot과 `idempotency_key`를 반환한다. `target_sha256`은 target bytes에, `analysis_snapshot_id`는 snapshot bytes에 결합되므로 handoff가 생성된 뒤 두 파일을 수정하지 않는다. 네 값을 수정하거나 path를 해석하지 말고 그대로 `report_session_start`에 전달한다.
+
 보고서 단계는 분석 대화와 분리된 compact report sub-session으로 실행한다. 이 모드에서는 [qwen-structured-report-mode.md](qwen-structured-report-mode.md)를 최상위 지시문으로 적용하고, report lifecycle server가 제공하는 only four lifecycle tools만 사용한다: `report_session_start`, `report_chunk_submit`, `report_session_sync`, `report_session_finalize`.
 
 모델은 backend가 제공한 `next_action`에 대응하는 도구 하나만 호출한다. lease, state version, required field, continuation, retry와 repair는 해당 지시문에 따른다. 모델은 report 파일, template 또는 Markdown 본문을 직접 읽거나 수정하거나 생성하지 않으며, lifecycle backend가 canonical artifact 생성과 validation을 소유한다.

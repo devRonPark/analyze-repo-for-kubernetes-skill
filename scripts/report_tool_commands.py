@@ -371,14 +371,20 @@ def parse_tool_call(name: str, arguments: object):
         target_hash = _string(raw["target_sha256"], "target_sha256")
         if SHA256.fullmatch(target_hash) is None:
             raise ValueError("target_sha256 is invalid")
+        snapshot_hash = _string(
+            raw["analysis_snapshot_id"], "analysis_snapshot_id"
+        )
+        if SHA256.fullmatch(snapshot_hash) is None:
+            raise ValueError("analysis_snapshot_id is invalid")
         return StartToolCommand(
-            _string(raw["target_ref"], "target_ref", minimum=1),
-            target_hash,
             _string(
-                raw["analysis_snapshot_id"],
-                "analysis_snapshot_id",
+                raw["target_ref"],
+                "target_ref",
                 minimum=1,
+                maximum=4096,
             ),
+            target_hash,
+            snapshot_hash,
             _string(
                 raw["idempotency_key"],
                 "idempotency_key",

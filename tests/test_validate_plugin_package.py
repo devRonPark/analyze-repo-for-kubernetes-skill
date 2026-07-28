@@ -75,6 +75,7 @@ class ValidatePluginPackageTests(unittest.TestCase):
         for relative in (
             "scripts/report_diagnostics.py",
             "scripts/report_lifecycle.py",
+            "scripts/report_start_handoff.py",
             "scripts/validate_target_report.py",
         ):
             with self.subTest(relative=relative):

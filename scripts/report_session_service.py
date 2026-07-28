@@ -460,11 +460,21 @@ class ReportSessionService:
 
         def operation(connection: sqlite3.Connection) -> ToolResult:
             existing = connection.execute(
-                "SELECT result_json FROM start_results "
+                "SELECT result_json, analysis_snapshot_id, target_hash, mode "
+                "FROM start_results JOIN sessions USING (session_id) "
                 "WHERE idempotency_key = ?",
                 (command.idempotency_key,),
             ).fetchone()
             if existing is not None:
+                if (
+                    existing["analysis_snapshot_id"]
+                    != command.analysis_snapshot_id
+                    or existing["target_hash"] != command.target_hash
+                    or existing["mode"] != command.mode
+                ):
+                    raise ValueError(
+                        "start idempotency binding mismatch"
+                    )
                 return _result_from_json(existing["result_json"])
             connection.execute(
                 """

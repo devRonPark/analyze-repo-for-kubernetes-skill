@@ -233,6 +233,7 @@ class SkillPackageTests(unittest.TestCase):
             "scripts/report_tool_handler.py",
             "scripts/report_model_protocol.py",
             "scripts/report_orchestrator.py",
+            "scripts/report_start_handoff.py",
         ):
             self.assertIn(f'"{artifact}"', validator)
 

@@ -27,7 +27,9 @@ def request(identifier, method, params=None):
 
 
 class ReportToolServerTests(unittest.TestCase):
-    def run_server(self, messages, database, *, target_json=None):
+    def run_server(
+        self, messages, database, *, target_json=None, cwd=ROOT
+    ):
         payload = "\n".join(
             json.dumps(message, separators=(",", ":"))
             for message in messages
@@ -44,7 +46,7 @@ class ReportToolServerTests(unittest.TestCase):
             input=payload + "\n",
             capture_output=True,
             text=True,
-            cwd=ROOT,
+            cwd=cwd,
             env=environment,
             timeout=10,
             check=False,
@@ -167,6 +169,86 @@ class ReportToolServerTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0)
         self.assertEqual(responses[1]["error"]["code"], -32002)
+
+    def test_configured_server_resolves_a_real_start_handoff(self):
+        with TemporaryDirectory() as temporary:
+            workspace = Path(temporary)
+            database = workspace / "session.sqlite"
+            target = workspace / "target.json"
+            target.write_text(
+                json.dumps(
+                    {
+                        "mode": "summary",
+                        "artifacts": {
+                            "report": str(workspace / "analysis.md")
+                        },
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+                encoding="utf-8",
+            )
+            snapshot_bytes = (
+                b'{"deployable_subject_ids":["deployable:api"],'
+                b'"mode":"summary","relationship_edge_ids":[]}\n'
+            )
+            snapshot_id = sha256(snapshot_bytes).hexdigest()
+            snapshot_path = (
+                workspace
+                / ".report-session/snapshots"
+                / f"{snapshot_id}.json"
+            )
+            snapshot_path.parent.mkdir(parents=True)
+            snapshot_path.write_bytes(snapshot_bytes)
+
+            result, responses = self.run_server(
+                [
+                    request(
+                        1,
+                        "initialize",
+                        {
+                            "protocolVersion": "2025-06-18",
+                            "capabilities": {},
+                            "clientInfo": {"name": "test", "version": "1"},
+                        },
+                    ),
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "notifications/initialized",
+                    },
+                    request(
+                        2,
+                        "tools/call",
+                        {
+                            "name": "report_session_start",
+                            "arguments": {
+                                "target_ref": str(target),
+                                "target_sha256": sha256(
+                                    target.read_bytes()
+                                ).hexdigest(),
+                                "analysis_snapshot_id": snapshot_id,
+                                "idempotency_key": "start-real-handoff",
+                            },
+                        },
+                    ),
+                ],
+                database,
+                cwd=workspace,
+            )
+
+            store = SQLiteReportSessionStore(database)
+            session_count = store.transact(
+                lambda connection: connection.execute(
+                    "SELECT COUNT(*) FROM sessions"
+                ).fetchone()[0]
+            )
+            store.close()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        started = responses[1]["result"]["structuredContent"]
+        self.assertTrue(started["ok"], started)
+        self.assertEqual(started["state"], "COLLECTING")
+        self.assertEqual(session_count, 1)
 
     def test_configured_server_finalizes_ready_session(self):
         with TemporaryDirectory() as temporary:

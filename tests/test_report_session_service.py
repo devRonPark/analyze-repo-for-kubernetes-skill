@@ -1,3 +1,4 @@
+from dataclasses import replace
 import json
 from pathlib import Path
 import sys
@@ -96,6 +97,18 @@ class ReportSessionServiceTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(self.count("sessions"), 1)
         self.assertEqual(first.status, "lease_issued")
+
+    def test_start_idempotency_key_cannot_rebind_immutable_inputs(self):
+        command = start_command()
+        self.service.start(command)
+
+        with self.assertRaisesRegex(ValueError, "binding"):
+            self.service.start(
+                replace(command, target_hash="different-target")
+            )
+
+        self.assertEqual(self.count("sessions"), 1)
+        self.assertEqual(self.count("start_results"), 1)
 
     def test_fully_covered_start_is_rendering_ready_without_lease(self):
         payload = json.loads(FIXTURE.read_text(encoding="utf-8"))

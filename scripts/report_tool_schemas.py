@@ -232,13 +232,15 @@ TOOLS = {
                 "target_ref": _string(
                     "오케스트레이터가 제공한 opaque target 식별자다.",
                     minLength=1,
+                    maxLength=4096,
                 ),
                 "target_sha256": _string(
                     "target metadata의 SHA-256이다.",
                     pattern="^[a-f0-9]{64}$",
                 ),
                 "analysis_snapshot_id": _string(
-                    "완료된 analysis snapshot 식별자다.", minLength=1
+                    "완료된 analysis snapshot 바이트의 SHA-256이다.",
+                    pattern="^[a-f0-9]{64}$",
                 ),
                 "idempotency_key": _string(
                     "동일 시작 요청의 재시도 키다.",

@@ -178,3 +178,26 @@ class ReportToolSchemaTests(unittest.TestCase):
                     "idempotency_key": "start-key-1",
                 },
             )
+        self.assertEqual(
+            schema["properties"]["target_ref"]["maxLength"], 4096
+        )
+        self.assertEqual(
+            schema["properties"]["analysis_snapshot_id"]["pattern"],
+            "^[a-f0-9]{64}$",
+        )
+        valid = {
+            "target_ref": "target-1",
+            "target_sha256": "a" * 64,
+            "analysis_snapshot_id": "b" * 64,
+            "idempotency_key": "start-key-1",
+        }
+        with self.assertRaisesRegex(ValueError, "analysis_snapshot_id"):
+            report_tool_commands.parse_tool_call(
+                "report_session_start",
+                {**valid, "analysis_snapshot_id": "snapshot-1"},
+            )
+        with self.assertRaisesRegex(ValueError, "target_ref"):
+            report_tool_commands.parse_tool_call(
+                "report_session_start",
+                {**valid, "target_ref": "x" * 4097},
+            )

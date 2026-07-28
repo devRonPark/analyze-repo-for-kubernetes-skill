@@ -46,6 +46,7 @@ REQUIRED_PLUGIN_FILES = (
     Path("scripts/report_tool_handler.py"),
     Path("scripts/report_model_protocol.py"),
     Path("scripts/report_orchestrator.py"),
+    Path("scripts/report_start_handoff.py"),
     Path("mcp/report_tool_server.py"),
     Path("scripts/validate_report.py"),
     Path("scripts/validate_target_report.py"),
