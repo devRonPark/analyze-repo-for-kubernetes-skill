@@ -26,6 +26,12 @@ class ReportMode:
     title: str
     sections: tuple[ReportSection, ...]
 
+    def section(self, key: str) -> ReportSection:
+        for section in self.sections:
+            if section.key == key:
+                return section
+        raise ValueError(f"{self.name} mode에서 지원하지 않는 section입니다: {key}")
+
 
 @dataclass(frozen=True)
 class ReportContract:

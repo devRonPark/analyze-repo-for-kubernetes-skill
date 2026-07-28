@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import re
 import sys
@@ -53,6 +54,32 @@ class ReportContractTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "detailed"):
                 report_contract.load_report_contract(path)
+
+    def test_loader_rejects_malformed_root(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "invalid-report-contract.json"
+            path.write_text("[]", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "root"):
+                report_contract.load_report_contract(path)
+
+    def test_loader_rejects_duplicate_section_key(self):
+        payload = json.loads(
+            report_contract.DEFAULT_CONTRACT_PATH.read_text(encoding="utf-8")
+        )
+        payload["modes"]["summary"]["sections"][1]["key"] = "scope"
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "invalid-report-contract.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "중복 section"):
+                report_contract.load_report_contract(path)
+
+    def test_mode_rejects_unknown_section(self):
+        mode = report_contract.load_report_contract().mode("summary")
+
+        with self.assertRaisesRegex(ValueError, "지원하지 않는 section.*unknown"):
+            mode.section("unknown")
 
     def test_validator_new_section_constants_come_from_report_contract(self):
         summary_headings = ("## contract summary",)
