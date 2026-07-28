@@ -134,10 +134,16 @@ class ReportToolServer:
             if identifier is None:
                 raise JsonRpcError(-32600, "tools/call requires an id")
             values = _object(params, "tools/call params")
-            if set(values) != {"name", "arguments"}:
+            unsupported = set(values) - {
+                "name",
+                "arguments",
+                "_meta",
+                "task",
+            }
+            if unsupported:
                 raise JsonRpcError(
                     -32602,
-                    "tools/call requires only name and arguments",
+                    "tools/call contains unsupported parameters",
                 )
             name = values["name"]
             if not isinstance(name, str):
