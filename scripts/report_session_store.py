@@ -10,7 +10,7 @@ from report_session_models import Lease, NewSession, SessionSnapshot, SessionSta
 
 
 T = TypeVar("T")
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
     session_id TEXT PRIMARY KEY,
@@ -85,6 +85,15 @@ CREATE TABLE IF NOT EXISTS chunk_results (
     UNIQUE (session_id, lease_id, chunk_ordinal),
     FOREIGN KEY (session_id, lease_id)
         REFERENCES leases(session_id, lease_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS start_results (
+    session_id TEXT NOT NULL,
+    idempotency_key TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (idempotency_key),
+    FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS work_units (
