@@ -15,6 +15,7 @@ from typing import Any
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT = SCRIPT_DIR.parent
+SKILL_ROOT = ROOT / "skills" / "analyze-repo-for-kubernetes"
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
@@ -30,8 +31,8 @@ class PreparationError(ValueError):
 
 
 TEMPLATES = {
-    "summary": ROOT / "assets" / "migration-summary-template.md",
-    "detailed": ROOT / "assets" / "migration-assessment-template.md",
+    "summary": SKILL_ROOT / "assets" / "migration-summary-template.md",
+    "detailed": SKILL_ROOT / "assets" / "migration-assessment-template.md",
 }
 
 

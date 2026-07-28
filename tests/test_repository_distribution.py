@@ -31,6 +31,54 @@ class RepositoryDistributionTests(unittest.TestCase):
         ]:
             self.assertTrue((ROOT / rel).is_file(), rel)
 
+    def test_plugin_distribution_docs_and_ci_contract(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/test.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("Codex Plugin", readme)
+        self.assertIn("skills/analyze-repo-for-kubernetes", readme)
+        self.assertIn("Qwen compatibility", readme)
+        self.assertIn("local marketplace", readme)
+        self.assertIn("Tool Orchestration", readme)
+        self.assertIn("Plugin root", agents)
+        self.assertIn("skills/analyze-repo-for-kubernetes/SKILL.md", agents)
+        self.assertIn("scripts/validate_plugin_package.py", workflow)
+        self.assertNotIn("scripts/validate_skill.py", workflow)
+
+    def test_repository_regression_entrypoint_validates_plugin_package(self):
+        result = subprocess.run(
+            ["python3", str(ROOT / "scripts/validate_regression.py"), str(ROOT)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            package = Path(tmp) / "plugin"
+            shutil.copytree(
+                ROOT,
+                package,
+                ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"),
+            )
+            (package / ".codex-plugin/plugin.json").unlink()
+            invalid = subprocess.run(
+                [
+                    "python3",
+                    str(ROOT / "scripts/validate_regression.py"),
+                    str(package),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertNotEqual(invalid.returncode, 0)
+        self.assertIn("Plugin manifest", invalid.stdout + invalid.stderr)
+
     def test_shell_scripts_are_valid(self):
         for rel in ["scripts/install-qwen.sh", "scripts/update-qwen.sh", "scripts/install-codex.sh", "scripts/uninstall-codex.sh"]:
             result = subprocess.run(

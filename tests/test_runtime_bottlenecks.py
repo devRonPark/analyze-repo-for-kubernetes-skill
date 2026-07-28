@@ -11,6 +11,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SKILL_ROOT = ROOT / "skills" / "analyze-repo-for-kubernetes"
 PREPARE = ROOT / "scripts" / "prepare_analysis_target.py"
 BENCHMARK = ROOT / "scripts" / "run_codex_benchmark.py"
 COMPACTOR = ROOT / "scripts" / "compact_repository_evidence.py"
@@ -73,12 +74,12 @@ class RuntimeBottleneckTests(unittest.TestCase):
         )
 
     def test_skill_routes_remote_git_through_one_preparation_command(self):
-        skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         body = skill.split("---", 2)[2]
-        detailed_template = (ROOT / "assets" / "migration-assessment-template.md").read_text(
+        detailed_template = (SKILL_ROOT / "assets" / "migration-assessment-template.md").read_text(
             encoding="utf-8"
         )
-        summary_template = (ROOT / "assets" / "migration-summary-template.md").read_text(
+        summary_template = (SKILL_ROOT / "assets" / "migration-summary-template.md").read_text(
             encoding="utf-8"
         )
 
@@ -93,7 +94,10 @@ class RuntimeBottleneckTests(unittest.TestCase):
         self.assertIn("Read each targeted file once with line numbers", skill)
         self.assertIn("Never use Markdown links or absolute paths for evidence", skill)
         self.assertIn("Read exactly one selected report template", skill)
-        self.assertIn("Do not read `scripts/validate_report.py`", skill)
+        self.assertIn(
+            "Do not read `<plugin-root>/scripts/validate_report.py`",
+            skill,
+        )
         self.assertIn("A verdict-only response is invalid", skill)
         for template in (summary_template, detailed_template):
             self.assertIn("모든 `- 키: 값` bullet", template)
@@ -313,7 +317,7 @@ class RuntimeBottleneckTests(unittest.TestCase):
             root = Path(temporary_directory)
             runtime_home = root / "runtime-home"
 
-            installed = benchmark.initialize_runtime_home(ROOT, runtime_home)
+            installed = benchmark.initialize_runtime_home(SKILL_ROOT, runtime_home)
 
             self.assertEqual(
                 installed,

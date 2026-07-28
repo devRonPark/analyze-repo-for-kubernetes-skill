@@ -294,12 +294,9 @@ class SkillPackageTests(unittest.TestCase):
     def test_github_actions_runs_cli_independent_core_suite(self):
         workflow = (ROOT / ".github/workflows/test.yml").read_text(encoding="utf-8")
         self.assertIn(
-            "python3 -m unittest tests.test_black_box_eval tests.test_codex_target_gate_hook tests.test_package "
-            "tests.test_repository_evidence tests.test_runtime_bottlenecks tests.test_trigger_precision_eval -v",
+            "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v",
             workflow,
         )
-        self.assertNotIn("discover -s tests", workflow)
-        self.assertNotIn("test_repository_distribution", workflow)
 
     def test_target_resolution_gate_contract(self):
         skill = PLUGIN_SKILL.read_text(encoding="utf-8")
