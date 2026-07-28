@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -9,6 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class RepositoryDistributionTests(unittest.TestCase):
+    def write_executable(self, path: Path, text: str) -> None:
+        path.write_text(text, encoding="utf-8")
+        path.chmod(0o755)
+
     def test_public_repository_files_exist(self):
         for rel in [
             "LICENSE",
@@ -110,33 +115,82 @@ class RepositoryDistributionTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             installed = home / ".qwen/skills/analyze-repo-for-kubernetes"
             self.assertTrue(installed.is_symlink())
-            self.assertEqual(installed.resolve(), ROOT.resolve())
+            self.assertEqual(
+                installed.resolve(),
+                (ROOT / "skills/analyze-repo-for-kubernetes").resolve(),
+            )
+            self.assertNotIn("deprecated", result.stderr.lower())
 
-    def test_codex_install_registers_a_valid_managed_hook(self):
+    def test_update_script_preserves_nested_qwen_skill_target(self):
         with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp) / "home"
+            temp_root = Path(tmp)
+            plugin = temp_root / "plugin"
+            shutil.copytree(
+                ROOT,
+                plugin,
+                ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc"),
+            )
+            (plugin / ".git").mkdir()
+            home = temp_root / "home"
             home.mkdir()
-            env = os.environ.copy()
-            env["HOME"] = str(home)
-            env.pop("CODEX_SKIP_HOOK", None)
-            env.pop("CODEX_HOME", None)
-            env.pop("USERPROFILE", None)
+            fake_bin = temp_root / "bin"
+            fake_bin.mkdir()
+            command_log = temp_root / "commands.log"
+            self.write_executable(
+                fake_bin / "git",
+                "#!/usr/bin/env bash\nexit 0\n",
+            )
+            self.write_executable(
+                fake_bin / "python3",
+                "#!/usr/bin/env bash\n"
+                'printf "%s\\n" "$*" >> "$COMMAND_LOG"\n'
+                "exit 0\n",
+            )
+            env = {
+                "HOME": str(home),
+                "PATH": f"{fake_bin}:/usr/bin:/bin",
+                "COMMAND_LOG": str(command_log),
+            }
             result = subprocess.run(
-                ["bash", str(ROOT / "scripts/install-codex.sh")],
-                cwd=ROOT,
+                ["bash", str(plugin / "scripts/update-qwen.sh")],
+                cwd=plugin,
                 env=env,
                 capture_output=True,
                 text=True,
                 check=False,
             )
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            config = (home / ".codex/config.toml").read_text(encoding="utf-8")
-            self.assertIn("BEGIN analyze-repo-for-kubernetes target gate", config)
-            self.assertIn("[[hooks.PreToolUse]]", config)
-            self.assertIn("[[hooks.UserPromptSubmit]]", config)
-            self.assertIn("timeout = 2", config)
-            self.assertIn("statusMessage", config)
-            self.assertIn("codex_target_gate_hook.py", config)
+            installed = home / ".qwen/skills/analyze-repo-for-kubernetes"
+            self.assertTrue(installed.is_symlink())
+            self.assertEqual(
+                installed.resolve(),
+                (plugin / "skills/analyze-repo-for-kubernetes").resolve(),
+            )
+            commands = command_log.read_text(encoding="utf-8")
+            self.assertIn(
+                f"{plugin}/scripts/validate_plugin_package.py {plugin}",
+                commands,
+            )
+
+    def test_codex_install_only_prints_plugin_guidance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp) / "home"
+            home.mkdir()
+            result = subprocess.run(
+                ["bash", str(ROOT / "scripts/install-codex.sh")],
+                cwd=ROOT,
+                env={"HOME": str(home), "PATH": "/usr/bin:/bin"},
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertFalse((home / ".agents").exists())
+            self.assertFalse((home / ".codex").exists())
+            self.assertIn("Codex Plugin", result.stdout)
+            self.assertIn("local marketplace", result.stdout)
+            self.assertIn("변경하지 않았습니다", result.stdout)
 
     def test_hook_manifest_has_codex_event_shape(self):
         manifest = json.loads((ROOT / "hooks.json").read_text(encoding="utf-8"))
@@ -164,6 +218,13 @@ class RepositoryDistributionTests(unittest.TestCase):
             )
             installed = home / ".agents/skills/analyze-repo-for-kubernetes"
             installed.mkdir(parents=True)
+            sibling = home / ".agents/skills/another-skill"
+            sibling.mkdir()
+            cache_marker = (
+                home / ".cache/analyze-repo-for-kubernetes/preserve-me.txt"
+            )
+            cache_marker.parent.mkdir(parents=True)
+            cache_marker.write_text("user-owned", encoding="utf-8")
             result = subprocess.run(
                 ["bash", str(ROOT / "scripts/uninstall-codex.sh")],
                 cwd=ROOT,
@@ -178,6 +239,12 @@ class RepositoryDistributionTests(unittest.TestCase):
             self.assertIn("[tui]", remaining)
             self.assertNotIn("analyze-repo-for-kubernetes target gate", remaining)
             self.assertFalse(installed.exists())
+            self.assertTrue(sibling.is_dir())
+            self.assertTrue(cache_marker.is_file())
+            self.assertEqual(
+                cache_marker.read_text(encoding="utf-8"),
+                "user-owned",
+            )
 
     def test_markdown_commands_do_not_use_shell_line_continuations(self):
         for path in ROOT.rglob("*.md"):

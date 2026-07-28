@@ -13,7 +13,6 @@ else
   CODEX_CONFIG_DIR="$HOME/.codex"
 fi
 CODEX_CONFIG_FILE="$CODEX_CONFIG_DIR/config.toml"
-CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/analyze-repo-for-kubernetes"
 MANAGED_BEGIN="# BEGIN analyze-repo-for-kubernetes target gate"
 MANAGED_END="# END analyze-repo-for-kubernetes target gate"
 
@@ -28,5 +27,4 @@ if [[ -f "$CODEX_CONFIG_FILE" ]]; then
 fi
 
 rm -rf "$TARGET_DIR"
-rm -rf "$CACHE_DIR"
-echo "제거 완료: $TARGET_DIR"
+echo "과거 standalone Skill 및 managed hook 정리 완료: $TARGET_DIR"
