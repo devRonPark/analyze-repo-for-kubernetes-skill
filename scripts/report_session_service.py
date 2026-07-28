@@ -888,3 +888,76 @@ class ReportSessionService:
             else "lease_issued"
         )
         return self._current_result(command.session_id, status, "")
+
+    def record_transport_failure(
+        self,
+        session_id: str,
+        lease_id: str,
+        code: str,
+    ) -> ToolResult:
+        def operation(connection: sqlite3.Connection) -> ToolResult:
+            session = connection.execute(
+                "SELECT state, state_version FROM sessions "
+                "WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if session is None:
+                raise KeyError(
+                    f"report session을 찾을 수 없습니다: {session_id}"
+                )
+            current = self._active_lease(connection, session_id)
+            if current is None or current.lease_id != lease_id:
+                raise ValueError("active lease가 일치하지 않습니다")
+            adjusted = self.planner.record_transport_failure(current)
+            connection.execute(
+                "UPDATE leases SET allowed_unit_ids_json = ?, "
+                "allowed_fields_json = ?, output_token_budget = ?, "
+                "retry_count = ?, updated_at = CURRENT_TIMESTAMP "
+                "WHERE session_id = ? AND lease_id = ?",
+                (
+                    _canonical_json(adjusted.allowed_unit_ids),
+                    _canonical_json(adjusted.allowed_fields),
+                    adjusted.output_token_budget,
+                    adjusted.retry_count,
+                    session_id,
+                    lease_id,
+                ),
+            )
+            completed, total = (
+                connection.execute(
+                    "SELECT COUNT(*) FROM work_units "
+                    "WHERE session_id = ? AND status = 'COMPLETE'",
+                    (session_id,),
+                ).fetchone()[0],
+                connection.execute(
+                    "SELECT COUNT(*) FROM work_units WHERE session_id = ?",
+                    (session_id,),
+                ).fetchone()[0],
+            )
+            connection.execute(
+                "INSERT INTO audit_events("
+                "session_id, event_type, state_version, details_json"
+                ") VALUES (?, 'TRANSPORT_FAILURE', ?, ?)",
+                (
+                    session_id,
+                    session["state_version"],
+                    _canonical_json(
+                        {
+                            "code": code,
+                            "lease_id": lease_id,
+                            "retry_count": adjusted.retry_count,
+                        }
+                    ),
+                ),
+            )
+            return ToolResult(
+                "retryable",
+                session_id,
+                session["state"],
+                session["state_version"],
+                adjusted,
+                (completed, total),
+                code,
+            )
+
+        return self.store.transact(operation)
