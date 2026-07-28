@@ -46,6 +46,7 @@ class SubmitChunkCommand:
     transport_status: str = "complete"
     observed_duration: float = 16.0
     payload_hash: str = ""
+    continuation: str = "lease_complete"
 
 
 @dataclass(frozen=True)

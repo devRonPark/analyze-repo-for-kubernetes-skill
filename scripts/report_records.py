@@ -12,7 +12,7 @@ import report_contract
 STATUSES = frozenset(
     ("confirmed", "inferred", "unknown", "conflicted", "not_applicable")
 )
-REASON_REQUIRED_STATUSES = frozenset(("inferred", "unknown", "conflicted"))
+REASON_REQUIRED_STATUSES = frozenset(("inferred", "conflicted"))
 MARKDOWN_LINK = re.compile(r"\[[^\]]+\]\([^)]+\)")
 SECRET_ASSIGNMENT = re.compile(
     r"(?i)(?:password|passwd|token|api[_-]?key|secret)\s*[:=]\s*\S+"
