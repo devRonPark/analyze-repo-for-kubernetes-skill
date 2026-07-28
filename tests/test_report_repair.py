@@ -334,6 +334,59 @@ class RepairUnitMappingTests(unittest.TestCase):
             },
         )
 
+    def test_document_resolver_does_not_match_evidence_prefixes(self):
+        document = report_records.ReportDocument(
+            mode="summary",
+            subjects=(
+                report_records.Subject(
+                    "deployable:web", "deployable", "Web"
+                ),
+            ),
+            claims=(
+                report_records.Claim(
+                    "runtime:value",
+                    "component_cards",
+                    "deployable:web",
+                    "runtime",
+                    "Python",
+                    "confirmed",
+                    ("foo.yaml:1",),
+                    "",
+                ),
+                report_records.Claim(
+                    "runtime:startup",
+                    "component_cards",
+                    "deployable:web",
+                    "startup_command",
+                    "python app.py",
+                    "confirmed",
+                    ("foo.yaml:10",),
+                    "",
+                ),
+            ),
+            relationships=(),
+        )
+
+        resolved = report_diagnostics.resolve_document_diagnostics(
+            (
+                Diagnostic(
+                    "EVIDENCE_LINE_OUT_OF_RANGE",
+                    "",
+                    "",
+                    "",
+                    (
+                        "인용 줄 범위가 파일 범위를 벗어났습니다: "
+                        "foo.yaml:10 (파일 줄 수: 2)"
+                    ),
+                ),
+            ),
+            document,
+            report_contract.load_report_contract(),
+        )
+
+        self.assertEqual(len(resolved), 1)
+        self.assertEqual(resolved[0].field, "startup_command")
+
 
 class ReportRepairLifecycleTests(unittest.TestCase):
     def setUp(self):

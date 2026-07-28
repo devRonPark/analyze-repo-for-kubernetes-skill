@@ -30,6 +30,13 @@ COMPONENT_PROPERTY = re.compile(
     r"- (?P<label>[^:]+):"
 )
 MISSING_SECTION = re.compile(r"^섹션이 없습니다:\s*(?P<heading>.+)$")
+FILE_LINE_REFERENCE = re.compile(
+    r"(?<![A-Za-z0-9_./-])"
+    r"(?P<path>(?:[A-Za-z0-9_.@+\-\[\]]+/)*"
+    r"[A-Za-z0-9_.@+\-\[\]]+):"
+    r"(?P<start>\d+)(?:-(?P<end>\d+))?"
+    r"(?=$|[`\s,;|)\]])"
+)
 
 
 def _field_lookup() -> dict[str, tuple[str, str]]:
@@ -128,6 +135,10 @@ def resolve_document_diagnostics(
     resolved = []
     for diagnostic in diagnostics:
         item = diagnostic
+        message_references = {
+            match.group(0)
+            for match in FILE_LINE_REFERENCE.finditer(item.message)
+        }
         component = COMPONENT_FIELD.match(item.message)
         if (
             component is not None
@@ -160,7 +171,7 @@ def resolve_document_diagnostics(
             record_matches: list[Diagnostic] = []
             for claim in document.claims:
                 if any(
-                    reference in item.message
+                    reference in message_references
                     for reference in claim.evidence
                 ):
                     record_matches.append(
@@ -175,7 +186,7 @@ def resolve_document_diagnostics(
                     )
             for relationship in document.relationships:
                 if any(
-                    reference in item.message
+                    reference in message_references
                     for reference in relationship.evidence
                 ):
                     record_matches.append(

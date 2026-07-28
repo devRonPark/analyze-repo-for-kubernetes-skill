@@ -98,27 +98,6 @@ class ReportLifecycle:
             strict=False
         )
         self.workspace = self.target_json.parent
-        self.document_loader = document_loader
-        self.contract = contract or report_contract.load_report_contract()
-        self.renderer = renderer
-        self.crash_hook = crash_hook or (lambda phase: None)
-        self.target = load_target(self.target_json)
-        artifacts = self.target.get("artifacts")
-        if not isinstance(artifacts, dict):
-            raise ValueError("target.json에 artifacts object가 없습니다")
-        canonical = artifacts.get("report")
-        if not isinstance(canonical, str) or not canonical:
-            raise ValueError("target.json artifacts.report가 없습니다")
-        canonical_path = Path(canonical).expanduser()
-        if not canonical_path.is_absolute():
-            canonical_path = self.workspace / canonical_path
-        self.canonical_path = canonical_path.resolve(strict=False)
-        try:
-            self.canonical_path.relative_to(self.workspace)
-        except ValueError as error:
-            raise ValueError(
-                "canonical report path가 target workspace 밖을 가리킵니다"
-            ) from error
         self.journal_path = (
             self.workspace
             / ".report-session/finalize-journal.json"
@@ -127,6 +106,42 @@ class ReportLifecycle:
             self.workspace
             / ".report-session/finalize.lock"
         )
+        self.document_loader = document_loader
+        self.contract = contract or report_contract.load_report_contract()
+        self.renderer = renderer
+        self.crash_hook = crash_hook or (lambda phase: None)
+        try:
+            self.target = load_target(self.target_json)
+            self.canonical_path = self._canonical_from_target(self.target)
+        except (OSError, ValueError):
+            journal = self._load_journal()
+            if journal is None:
+                raise
+            self.target = {}
+            self.canonical_path = self._journal_path(
+                journal, "canonical_path"
+            )
+
+    def _canonical_from_target(
+        self, target: Mapping[str, object]
+    ) -> Path:
+        artifacts = target.get("artifacts")
+        if not isinstance(artifacts, dict):
+            raise ValueError("target.json에 artifacts object가 없습니다")
+        canonical = artifacts.get("report")
+        if not isinstance(canonical, str) or not canonical:
+            raise ValueError("target.json artifacts.report가 없습니다")
+        canonical_path = Path(canonical).expanduser()
+        if not canonical_path.is_absolute():
+            canonical_path = self.workspace / canonical_path
+        canonical_path = canonical_path.resolve(strict=False)
+        try:
+            canonical_path.relative_to(self.workspace)
+        except ValueError as error:
+            raise ValueError(
+                "canonical report path가 target workspace 밖을 가리킵니다"
+            ) from error
+        return canonical_path
 
     @contextmanager
     def _workspace_lock(self):

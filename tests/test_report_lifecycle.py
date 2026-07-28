@@ -450,6 +450,79 @@ class ReportLifecycleTests(unittest.TestCase):
             ).exists()
         )
 
+    def test_malformed_target_after_crash_recovers_original_journal(self):
+        def crash(phase):
+            if phase == "candidate_written":
+                raise SimulatedCrash("owner stopped after candidate")
+
+        original_lifecycle = self.lifecycle(crash_hook=crash)
+        original_candidate = original_lifecycle.candidate_path(
+            "session-1"
+        )
+        with self.assertRaises(SimulatedCrash):
+            self.finalize(original_lifecycle)
+        self.target.write_text("{not-json", encoding="utf-8")
+
+        result = self.lifecycle().finalize(
+            "session-1",
+            self.initial_version,
+            "finalize-key",
+        )
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.state, "FAILED")
+        self.assertEqual(self.canonical.read_bytes(), self.old_bytes)
+        self.assertFalse(original_candidate.exists())
+        self.assertFalse(
+            (
+                self.workspace
+                / ".report-session/finalize-journal.json"
+            ).exists()
+        )
+
+    def test_outside_target_path_after_crash_recovers_original_journal(self):
+        def crash(phase):
+            if phase == "candidate_written":
+                raise SimulatedCrash("owner stopped after candidate")
+
+        original_lifecycle = self.lifecycle(crash_hook=crash)
+        original_candidate = original_lifecycle.candidate_path(
+            "session-1"
+        )
+        with self.assertRaises(SimulatedCrash):
+            self.finalize(original_lifecycle)
+        outside = self.workspace.parent / "outside-after-crash.md"
+        outside.write_text("# outside\n", encoding="utf-8")
+        target_payload = json.loads(
+            self.target.read_text(encoding="utf-8")
+        )
+        target_payload["artifacts"]["report"] = str(outside)
+        self.target.write_text(
+            json.dumps(target_payload),
+            encoding="utf-8",
+        )
+
+        result = self.lifecycle().finalize(
+            "session-1",
+            self.initial_version,
+            "finalize-key",
+        )
+
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.state, "FAILED")
+        self.assertEqual(self.canonical.read_bytes(), self.old_bytes)
+        self.assertEqual(
+            outside.read_text(encoding="utf-8"),
+            "# outside\n",
+        )
+        self.assertFalse(original_candidate.exists())
+        self.assertFalse(
+            (
+                self.workspace
+                / ".report-session/finalize-journal.json"
+            ).exists()
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
