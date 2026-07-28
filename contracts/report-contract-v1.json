@@ -1,0 +1,29 @@
+{
+  "schema_version": "report-contract/v1",
+  "modes": {
+    "summary": {
+      "title": "Kubernetes 설계 입력 요약",
+      "sections": [
+        {"key": "scope", "heading": "## 1. 분석 범위", "renderer_type": "scope"},
+        {"key": "candidate_inventory", "heading": "## 2. 배포 대상 후보", "renderer_type": "candidate_inventory"},
+        {"key": "component_cards", "heading": "## 3. 배포 대상별 실행 정보", "renderer_type": "component_cards"},
+        {"key": "relationships", "heading": "## 4. 구성과 관계", "renderer_type": "relationships"},
+        {"key": "deployment_evidence", "heading": "## 5. 운영 환경 배포 근거", "renderer_type": "deployment_evidence"},
+        {"key": "readiness", "heading": "## 6. Kubernetes 설계 입력 상태", "renderer_type": "readiness"}
+      ]
+    },
+    "detailed": {
+      "title": "Kubernetes 설계 입력 상세 평가",
+      "sections": [
+        {"key": "scope", "heading": "## 1. 분석 범위", "renderer_type": "scope"},
+        {"key": "candidate_inventory", "heading": "## 2. 배포 대상 후보", "renderer_type": "candidate_inventory"},
+        {"key": "component_cards", "heading": "## 3. 배포 대상별 실행 정보", "renderer_type": "component_cards"},
+        {"key": "relationships", "heading": "## 4. 구성과 관계", "renderer_type": "relationship_matrix"},
+        {"key": "deployment_evidence", "heading": "## 5. 운영 환경 배포 근거", "renderer_type": "deployment_evidence"},
+        {"key": "configuration_detail", "heading": "## 6. 설정과 상태 상세", "renderer_type": "configuration_detail"},
+        {"key": "exclusions_and_blockers", "heading": "## 7. 제외 항목과 설계 차단 항목 상세", "renderer_type": "exclusions_and_blockers"},
+        {"key": "readiness", "heading": "## 8. Kubernetes 설계 입력 상태", "renderer_type": "readiness"}
+      ]
+    }
+  }
+}
