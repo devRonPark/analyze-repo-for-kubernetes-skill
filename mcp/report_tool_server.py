@@ -13,7 +13,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from report_model_protocol import CompleteToolCall
-from report_lifecycle import ReportLifecycle
 from report_start_handoff import ReportStartResolver
 from report_session_service import ReportSessionService
 from report_session_store import SQLiteReportSessionStore
@@ -172,12 +171,6 @@ def serve() -> int:
     service = ReportSessionService(store)
     target_json = os.environ.get("REPORT_TARGET_JSON")
     configured_target = Path(target_json) if target_json else None
-    if target_json:
-        service.lifecycle = ReportLifecycle(
-            store=store,
-            target_json=configured_target,
-            document_loader=service.load_document,
-        )
     workspace = (
         configured_target.expanduser().resolve(strict=False).parent
         if configured_target is not None

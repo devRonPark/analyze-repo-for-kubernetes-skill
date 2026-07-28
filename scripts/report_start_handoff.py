@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
+from dataclasses import dataclass
 from hashlib import sha256
 import json
 import os
 from pathlib import Path
 import re
+import secrets
+import stat
 import sys
-import tempfile
-from typing import Iterable, Mapping
+from typing import Callable, Iterable, Iterator, Mapping
 
 from report_lifecycle import ReportLifecycle
 from report_session_service import StartCommand
@@ -30,6 +33,22 @@ class HandoffError(ValueError):
     pass
 
 
+OpenFaultHook = Callable[[str, str], None]
+DIRECTORY_FLAGS = (
+    os.O_RDONLY
+    | getattr(os, "O_DIRECTORY", 0)
+    | getattr(os, "O_NOFOLLOW", 0)
+)
+FILE_FLAGS = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+
+
+@dataclass(frozen=True)
+class VerifiedFile:
+    identity: Path
+    relative_parts: tuple[str, ...]
+    content: bytes
+
+
 def _canonical_bytes(payload: Mapping[str, object]) -> bytes:
     return (
         json.dumps(
@@ -42,27 +61,175 @@ def _canonical_bytes(payload: Mapping[str, object]) -> bytes:
     ).encode("utf-8")
 
 
-def _bounded_bytes(path: Path, maximum: int) -> bytes:
+def _safe_parts(path: Path) -> tuple[str, ...]:
+    parts = tuple(path.parts)
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        raise HandoffError("report handoff input is invalid")
+    return parts
+
+
+def _relative_parts(root: Path, target_ref: str | Path) -> tuple[str, ...]:
     try:
-        if path.stat().st_size > maximum:
-            raise HandoffError("report handoff input is invalid")
-        with path.open("rb") as stream:
-            content = stream.read(maximum + 1)
+        candidate = Path(target_ref).expanduser()
+        relative = (
+            candidate.relative_to(root)
+            if candidate.is_absolute()
+            else candidate
+        )
+        return _safe_parts(relative)
+    except (OSError, RuntimeError, ValueError) as error:
+        raise HandoffError("report handoff input is invalid") from error
+
+
+@contextmanager
+def _confined_parent(
+    root: Path,
+    relative_parts: tuple[str, ...],
+    *,
+    create_directories: bool = False,
+) -> Iterator[tuple[int, str]]:
+    descriptors: list[int] = []
+    try:
+        current = os.open(root, DIRECTORY_FLAGS)
+        descriptors.append(current)
+        for part in relative_parts[:-1]:
+            try:
+                child = os.open(part, DIRECTORY_FLAGS, dir_fd=current)
+            except FileNotFoundError:
+                if not create_directories:
+                    raise
+                os.mkdir(part, 0o700, dir_fd=current)
+                child = os.open(part, DIRECTORY_FLAGS, dir_fd=current)
+            descriptors.append(child)
+            current = child
+        yield current, relative_parts[-1]
     except (OSError, ValueError) as error:
         raise HandoffError("report handoff input is invalid") from error
-    if len(content) > maximum:
-        raise HandoffError("report handoff input is invalid")
-    return content
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
 
 
-def _target_mode(content: bytes) -> str:
+def _read_open_file(
+    parent_fd: int,
+    name: str,
+    *,
+    identity: Path,
+    maximum: int,
+    kind: str,
+    open_fault_hook: OpenFaultHook | None,
+) -> bytes:
+    descriptor = -1
+    try:
+        descriptor = os.open(name, FILE_FLAGS, dir_fd=parent_fd)
+        before = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_size > maximum
+        ):
+            raise HandoffError("report handoff input is invalid")
+        if open_fault_hook is not None:
+            open_fault_hook(kind, str(identity))
+        path_state = os.stat(
+            name, dir_fd=parent_fd, follow_symlinks=False
+        )
+        if (
+            path_state.st_dev != before.st_dev
+            or path_state.st_ino != before.st_ino
+        ):
+            raise HandoffError("report handoff input is invalid")
+        chunks: list[bytes] = []
+        remaining = maximum + 1
+        while remaining:
+            chunk = os.read(descriptor, min(65_536, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        content = b"".join(chunks)
+        after = os.fstat(descriptor)
+        if (
+            len(content) > maximum
+            or (
+                before.st_dev,
+                before.st_ino,
+                before.st_size,
+                before.st_mtime_ns,
+                before.st_ctime_ns,
+            )
+            != (
+                after.st_dev,
+                after.st_ino,
+                after.st_size,
+                after.st_mtime_ns,
+                after.st_ctime_ns,
+            )
+        ):
+            raise HandoffError("report handoff input is invalid")
+        path_after = os.stat(
+            name, dir_fd=parent_fd, follow_symlinks=False
+        )
+        if (
+            path_after.st_dev != after.st_dev
+            or path_after.st_ino != after.st_ino
+        ):
+            raise HandoffError("report handoff input is invalid")
+        return content
+    except (OSError, ValueError) as error:
+        raise HandoffError("report handoff input is invalid") from error
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _read_confined(
+    root: Path,
+    relative_parts: tuple[str, ...],
+    maximum: int,
+    *,
+    kind: str,
+    open_fault_hook: OpenFaultHook | None = None,
+) -> VerifiedFile:
+    identity = root.joinpath(*relative_parts)
+    with _confined_parent(root, relative_parts) as (parent_fd, name):
+        content = _read_open_file(
+            parent_fd,
+            name,
+            identity=identity,
+            maximum=maximum,
+            kind=kind,
+            open_fault_hook=open_fault_hook,
+        )
+    return VerifiedFile(identity, relative_parts, content)
+
+
+def _target_payload(
+    content: bytes, target_identity: Path
+) -> dict[str, object]:
     try:
         payload = json.loads(content)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
         raise HandoffError("report handoff input is invalid") from error
     if not isinstance(payload, dict) or payload.get("mode") not in MODES:
         raise HandoffError("report handoff input is invalid")
-    return str(payload["mode"])
+    artifacts = payload.get("artifacts")
+    report = (
+        artifacts.get("report")
+        if isinstance(artifacts, dict)
+        else None
+    )
+    if not isinstance(report, str) or not report:
+        raise HandoffError("report handoff input is invalid")
+    canonical = Path(report).expanduser()
+    if not canonical.is_absolute():
+        canonical = target_identity.parent / canonical
+    try:
+        canonical.resolve(strict=False).relative_to(
+            target_identity.parent
+        )
+    except (OSError, RuntimeError, ValueError) as error:
+        raise HandoffError("report handoff input is invalid") from error
+    return dict(payload)
 
 
 def _identifiers(values: Iterable[str]) -> tuple[str, ...]:
@@ -115,46 +282,89 @@ def _analysis_snapshot(content: bytes) -> AnalysisSnapshot:
     )
 
 
-def _install_immutable(path: Path, content: bytes) -> None:
-    temporary_path: Path | None = None
+def _write_all(descriptor: int, content: bytes) -> None:
+    position = 0
+    while position < len(content):
+        position += os.write(descriptor, content[position:])
+
+
+def _install_immutable(
+    root: Path,
+    relative_parts: tuple[str, ...],
+    content: bytes,
+) -> Path:
+    temporary_name = f".snapshot-{secrets.token_hex(12)}.tmp"
+    descriptor = -1
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="wb",
-            dir=path.parent,
-            prefix=".snapshot.",
-            delete=False,
-        ) as stream:
-            temporary_path = Path(stream.name)
-            stream.write(content)
-            stream.flush()
-            os.fsync(stream.fileno())
-        try:
-            os.link(temporary_path, path)
-        except FileExistsError:
-            if (
-                path.is_symlink()
-                or _bounded_bytes(path, MAX_SNAPSHOT_BYTES) != content
-            ):
-                raise HandoffError("report handoff input is invalid")
+        with _confined_parent(
+            root, relative_parts, create_directories=True
+        ) as (parent_fd, name):
+            descriptor = os.open(
+                temporary_name,
+                os.O_WRONLY
+                | os.O_CREAT
+                | os.O_EXCL
+                | getattr(os, "O_NOFOLLOW", 0),
+                0o600,
+                dir_fd=parent_fd,
+            )
+            _write_all(descriptor, content)
+            os.fsync(descriptor)
+            os.close(descriptor)
+            descriptor = -1
+            try:
+                os.link(
+                    temporary_name,
+                    name,
+                    src_dir_fd=parent_fd,
+                    dst_dir_fd=parent_fd,
+                    follow_symlinks=False,
+                )
+            except FileExistsError:
+                existing = _read_open_file(
+                    parent_fd,
+                    name,
+                    identity=root.joinpath(*relative_parts),
+                    maximum=MAX_SNAPSHOT_BYTES,
+                    kind="snapshot",
+                    open_fault_hook=None,
+                )
+                if existing != content:
+                    raise HandoffError(
+                        "report handoff input is invalid"
+                    )
+            os.unlink(temporary_name, dir_fd=parent_fd)
+            os.fsync(parent_fd)
     except OSError as error:
         raise HandoffError("report handoff input is invalid") from error
     finally:
-        if temporary_path is not None:
-            try:
-                temporary_path.unlink()
-            except FileNotFoundError:
-                pass
+        if descriptor >= 0:
+            os.close(descriptor)
+        try:
+            with _confined_parent(
+                root, relative_parts, create_directories=False
+            ) as (parent_fd, _):
+                os.unlink(temporary_name, dir_fd=parent_fd)
+        except (FileNotFoundError, HandoffError):
+            pass
+    return root.joinpath(*relative_parts)
 
 
-def _snapshot_destination(target: Path, snapshot_id: str) -> Path:
-    directory = target.parent / ".report-session/snapshots"
+def _helper_target(target_ref: Path) -> tuple[Path, VerifiedFile]:
     try:
-        directory.mkdir(parents=True, exist_ok=True)
-        resolved = directory.resolve(strict=True)
-        resolved.relative_to(target.parent)
+        candidate = Path(target_ref).expanduser()
+        if not candidate.is_absolute():
+            candidate = Path.cwd() / candidate
+        root = Path(candidate.anchor or os.sep)
+        target = _read_confined(
+            root,
+            _relative_parts(root, candidate),
+            MAX_TARGET_BYTES,
+            kind="target",
+        )
+        return root, target
     except (OSError, RuntimeError, ValueError) as error:
         raise HandoffError("report handoff input is invalid") from error
-    return resolved / f"{snapshot_id}.json"
 
 
 def create_start_handoff(
@@ -163,15 +373,10 @@ def create_start_handoff(
     deployable_subject_ids: Iterable[str],
     relationship_edge_ids: Iterable[str],
 ) -> dict[str, str]:
-    try:
-        target = Path(target_ref).expanduser().resolve(strict=True)
-    except (OSError, RuntimeError, ValueError) as error:
-        raise HandoffError("report handoff input is invalid") from error
-    if not target.is_file():
-        raise HandoffError("report handoff input is invalid")
-
-    target_bytes = _bounded_bytes(target, MAX_TARGET_BYTES)
-    mode = _target_mode(target_bytes)
+    root, target = _helper_target(target_ref)
+    mode = str(
+        _target_payload(target.content, target.identity)["mode"]
+    )
     snapshot_bytes = _canonical_bytes(
         {
             "mode": mode,
@@ -186,15 +391,20 @@ def create_start_handoff(
     if len(snapshot_bytes) > MAX_SNAPSHOT_BYTES:
         raise HandoffError("report handoff input is invalid")
 
-    target_hash = sha256(target_bytes).hexdigest()
+    target_hash = sha256(target.content).hexdigest()
     snapshot_id = sha256(snapshot_bytes).hexdigest()
-    snapshot_path = _snapshot_destination(target, snapshot_id)
-    _install_immutable(snapshot_path, snapshot_bytes)
+    snapshot_parts = (
+        *target.relative_parts[:-1],
+        ".report-session",
+        "snapshots",
+        f"{snapshot_id}.json",
+    )
+    _install_immutable(root, snapshot_parts, snapshot_bytes)
     retry_hash = sha256(
         f"{target_hash}:{snapshot_id}".encode("ascii")
     ).hexdigest()
     return {
-        "target_ref": str(target),
+        "target_ref": str(target.identity),
         "target_sha256": target_hash,
         "analysis_snapshot_id": snapshot_id,
         "idempotency_key": f"report-start-{retry_hash}",
@@ -208,6 +418,7 @@ class ReportStartResolver:
         *,
         workspace_root: Path,
         configured_target_json: Path | None = None,
+        open_fault_hook: OpenFaultHook | None = None,
     ):
         self.service = service
         try:
@@ -216,75 +427,83 @@ class ReportStartResolver:
             )
             if not self.workspace_root.is_dir():
                 raise HandoffError("report handoff input is invalid")
-            self.configured_target_json = (
-                Path(configured_target_json).expanduser().resolve(strict=True)
-                if configured_target_json is not None
-                else None
-            )
-            if self.configured_target_json is not None:
-                self.configured_target_json.relative_to(self.workspace_root)
+            self.configured_target_json = None
+            if configured_target_json is not None:
+                configured_parts = _relative_parts(
+                    self.workspace_root, configured_target_json
+                )
+                self.configured_target_json = (
+                    self.workspace_root.joinpath(*configured_parts)
+                )
         except (OSError, RuntimeError, ValueError) as error:
             raise HandoffError("report handoff input is invalid") from error
+        self.open_fault_hook = open_fault_hook
+        self.service.lifecycle_resolver = self.lifecycle_for
 
-    def _target(self, target_ref: str) -> Path:
-        try:
-            candidate = Path(target_ref).expanduser()
-            if not candidate.is_absolute():
-                candidate = self.workspace_root / candidate
-            if candidate.is_symlink():
-                raise HandoffError("report handoff input is invalid")
-            target = candidate.resolve(strict=True)
-            target.relative_to(self.workspace_root)
-        except (OSError, RuntimeError, ValueError) as error:
-            raise HandoffError("report handoff input is invalid") from error
-        if not target.is_file() or (
+    def _target(self, target_ref: str) -> VerifiedFile:
+        target = _read_confined(
+            self.workspace_root,
+            _relative_parts(self.workspace_root, target_ref),
+            MAX_TARGET_BYTES,
+            kind="target",
+            open_fault_hook=self.open_fault_hook,
+        )
+        if (
             self.configured_target_json is not None
-            and target != self.configured_target_json
+            and target.identity != self.configured_target_json
         ):
             raise HandoffError("report handoff input is invalid")
         return target
 
     def _snapshot(
-        self, target: Path, analysis_snapshot_id: str
+        self, target: VerifiedFile, analysis_snapshot_id: str
     ) -> AnalysisSnapshot:
         if SHA256.fullmatch(analysis_snapshot_id) is None:
             raise HandoffError("report handoff input is invalid")
-        candidate = (
-            target.parent
-            / ".report-session/snapshots"
-            / f"{analysis_snapshot_id}.json"
+        snapshot_parts = (
+            *target.relative_parts[:-1],
+            ".report-session",
+            "snapshots",
+            f"{analysis_snapshot_id}.json",
         )
-        try:
-            if candidate.is_symlink():
-                raise HandoffError("report handoff input is invalid")
-            snapshot_path = candidate.resolve(strict=True)
-            snapshot_path.relative_to(self.workspace_root)
-        except (OSError, RuntimeError, ValueError) as error:
-            raise HandoffError("report handoff input is invalid") from error
-        snapshot_bytes = _bounded_bytes(
-            snapshot_path, MAX_SNAPSHOT_BYTES
+        snapshot_file = _read_confined(
+            self.workspace_root,
+            snapshot_parts,
+            MAX_SNAPSHOT_BYTES,
+            kind="snapshot",
+            open_fault_hook=self.open_fault_hook,
         )
+        snapshot_bytes = snapshot_file.content
         if sha256(snapshot_bytes).hexdigest() != analysis_snapshot_id:
             raise HandoffError("report handoff input is invalid")
         return _analysis_snapshot(snapshot_bytes)
 
-    def _validate_retry_binding(
-        self, command: object, mode: str
-    ) -> None:
-        existing = self.service.store.transact(
-            lambda connection: connection.execute(
-                "SELECT analysis_snapshot_id, target_hash, mode "
-                "FROM sessions WHERE start_idempotency_key = ?",
-                (command.idempotency_key,),
-            ).fetchone()
+    def lifecycle_for(self, session_id: str) -> ReportLifecycle:
+        snapshot = self.service.store.load(session_id)
+        target_ref = (
+            snapshot.target_identity
+            or (
+                str(self.configured_target_json)
+                if self.configured_target_json is not None
+                else ""
+            )
         )
-        if existing is not None and (
-            existing["analysis_snapshot_id"]
-            != command.analysis_snapshot_id
-            or existing["target_hash"] != command.target_sha256
-            or existing["mode"] != mode
-        ):
+        target = self._target(target_ref)
+        target_bytes = target.content
+        if sha256(target_bytes).hexdigest() != snapshot.target_hash:
             raise HandoffError("report handoff input is invalid")
+        target_payload = _target_payload(
+            target_bytes, target.identity
+        )
+        return ReportLifecycle(
+            store=self.service.store,
+            target_json=target.identity,
+            document_loader=self.service.load_document,
+            contract=self.service.contract,
+            target_payload=target_payload,
+            verified_target_bytes=target_bytes,
+            recovery_session_id=session_id,
+        )
 
     def __call__(self, command: object) -> StartCommand:
         try:
@@ -302,26 +521,22 @@ class ReportStartResolver:
             if SHA256.fullmatch(target_hash) is None:
                 raise HandoffError("report handoff input is invalid")
             target = self._target(command.target_ref)
-            target_bytes = _bounded_bytes(target, MAX_TARGET_BYTES)
+            target_bytes = target.content
             if sha256(target_bytes).hexdigest() != target_hash:
                 raise HandoffError("report handoff input is invalid")
-            mode = _target_mode(target_bytes)
+            mode = str(
+                _target_payload(
+                    target_bytes, target.identity
+                )["mode"]
+            )
             snapshot = self._snapshot(
                 target, command.analysis_snapshot_id
             )
             if snapshot.mode != mode:
                 raise HandoffError("report handoff input is invalid")
-            self._validate_retry_binding(command, mode)
-
-            lifecycle = ReportLifecycle(
-                store=self.service.store,
-                target_json=target,
-                document_loader=self.service.load_document,
-                contract=self.service.contract,
-            )
             session_binding = (
                 f"{command.idempotency_key}:{target_hash}:"
-                f"{command.analysis_snapshot_id}"
+                f"{command.analysis_snapshot_id}:{target.identity}"
             ).encode("utf-8")
             start_command = StartCommand(
                 session_id=(
@@ -339,10 +554,10 @@ class ReportStartResolver:
                     "claims": [],
                     "relationships": [],
                 },
+                target_identity=str(target.identity),
             )
         except Exception as error:
             raise HandoffError("report handoff input is invalid") from error
-        self.service.lifecycle = lifecycle
         return start_command
 
 

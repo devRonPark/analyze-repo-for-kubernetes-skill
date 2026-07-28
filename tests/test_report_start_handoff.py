@@ -7,7 +7,9 @@ from pathlib import Path
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +26,14 @@ from report_session_service import ReportSessionService
 from report_session_store import SQLiteReportSessionStore
 from report_tool_commands import StartToolCommand
 from report_tool_handler import ReportToolHandler
+
+
+REPORT_FIXTURE = (
+    ROOT / "tests/fixtures/report_records/jpetstore-summary.json"
+)
+EVIDENCE_REPOSITORY = (
+    ROOT / "tests/fixtures/report_records/repository"
+)
 
 
 class Call:
@@ -49,6 +59,46 @@ def write_target(workspace: Path, *, mode: str = "summary") -> Path:
         encoding="utf-8",
     )
     return target
+
+
+def write_finalizable_target(workspace: Path) -> tuple[Path, Path]:
+    canonical = workspace / "report.md"
+    canonical.write_text("# original\n", encoding="utf-8")
+    target = workspace / "target.json"
+    target.write_text(
+        json.dumps(
+            {
+                "mode": "summary",
+                "analysis_root": str(EVIDENCE_REPOSITORY),
+                "artifacts": {"report": str(canonical)},
+                "validation": {
+                    "command": [
+                        sys.executable,
+                        str(
+                            ROOT / "scripts/validate_target_report.py"
+                        ),
+                        str(target),
+                    ],
+                    "report_command": [
+                        sys.executable,
+                        str(ROOT / "scripts/validate_report.py"),
+                        str(canonical),
+                        "--mode",
+                        "summary",
+                        "--contract",
+                        "new",
+                        "--repo-root",
+                        str(EVIDENCE_REPOSITORY),
+                    ],
+                },
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return target, canonical
 
 
 class ReportStartHandoffTests(unittest.TestCase):
@@ -162,6 +212,7 @@ class ReportStartHandoffTests(unittest.TestCase):
     def test_helper_rejects_snapshot_directory_escape(self):
         with TemporaryDirectory() as outside_temporary:
             outside = Path(outside_temporary)
+            before = tuple(outside.rglob("*"))
             workspace = self.workspace / "escaped"
             workspace.mkdir()
             target = write_target(workspace)
@@ -176,9 +227,26 @@ class ReportStartHandoffTests(unittest.TestCase):
                     relationship_edge_ids=(),
                 )
 
-            self.assertEqual(list(outside.rglob("*.json")), [])
+            self.assertEqual(tuple(outside.rglob("*")), before)
 
-    def test_resolver_creates_typed_empty_document_and_configures_lifecycle(self):
+    def test_helper_rejects_symlink_parent_without_touching_outside_tree(self):
+        with TemporaryDirectory() as outside_temporary:
+            outside = Path(outside_temporary)
+            outside_target = write_target(outside)
+            linked_parent = self.workspace / "linked-parent"
+            linked_parent.symlink_to(outside, target_is_directory=True)
+            before = tuple(outside.rglob("*"))
+
+            with self.assertRaises(HandoffError):
+                create_start_handoff(
+                    linked_parent / outside_target.name,
+                    deployable_subject_ids=("deployable:api",),
+                    relationship_edge_ids=(),
+                )
+
+            self.assertEqual(tuple(outside.rglob("*")), before)
+
+    def test_resolver_creates_typed_empty_document_without_global_lifecycle(self):
         handoff = self.handoff()
         resolver = ReportStartResolver(
             self.service,
@@ -189,6 +257,7 @@ class ReportStartHandoffTests(unittest.TestCase):
         command = resolver(StartToolCommand(**handoff))
 
         self.assertEqual(command.target_hash, handoff["target_sha256"])
+        self.assertEqual(command.target_identity, str(self.target))
         self.assertEqual(
             command.analysis_snapshot_id,
             handoff["analysis_snapshot_id"],
@@ -211,7 +280,7 @@ class ReportStartHandoffTests(unittest.TestCase):
                 "relationships": [],
             },
         )
-        self.assertEqual(self.service.lifecycle.target_json, self.target)
+        self.assertIsNone(self.service.lifecycle)
 
     def test_idempotent_start_retry_returns_one_session(self):
         handoff = self.handoff()
@@ -263,9 +332,148 @@ class ReportStartHandoffTests(unittest.TestCase):
         self.assertTrue(first["ok"], first)
         self.assertFalse(second["ok"])
         self.assertEqual(
-            self.service.lifecycle.target_json, first_target
+            self.store.load(first["session_id"]).target_identity,
+            str(first_target),
         )
+        self.assertIsNone(self.service.lifecycle)
         self.assertEqual(self.count("sessions"), 1)
+
+    def test_identical_bytes_at_different_paths_cannot_reuse_session(self):
+        first_workspace = self.workspace / "same-first"
+        second_workspace = self.workspace / "same-second"
+        first_workspace.mkdir()
+        second_workspace.mkdir()
+        target_bytes = (
+            b'{"artifacts":{"report":"report.md"},'
+            b'"mode":"summary"}\n'
+        )
+        first_target = first_workspace / "target.json"
+        second_target = second_workspace / "target.json"
+        first_target.write_bytes(target_bytes)
+        second_target.write_bytes(target_bytes)
+        first_handoff = create_start_handoff(
+            first_target,
+            deployable_subject_ids=("deployable:api",),
+            relationship_edge_ids=(),
+        )
+        second_handoff = create_start_handoff(
+            second_target,
+            deployable_subject_ids=("deployable:api",),
+            relationship_edge_ids=(),
+        )
+        self.assertEqual(
+            first_handoff["idempotency_key"],
+            second_handoff["idempotency_key"],
+        )
+        handler = ReportToolHandler(
+            self.service,
+            start_resolver=ReportStartResolver(
+                self.service,
+                workspace_root=self.workspace,
+            ),
+        )
+
+        first = handler.execute_tool_call(Call(first_handoff))
+        second = handler.execute_tool_call(Call(second_handoff))
+
+        self.assertTrue(first["ok"], first)
+        self.assertFalse(second["ok"])
+        self.assertEqual(
+            self.store.load(first["session_id"]).target_identity,
+            str(first_target),
+        )
+        self.assertIsNone(self.service.lifecycle)
+        self.assertEqual(self.count("sessions"), 1)
+
+    def test_start_a_start_b_then_finalize_a_uses_a_target(self):
+        first_workspace = self.workspace / "finalize-first"
+        second_workspace = self.workspace / "finalize-second"
+        first_workspace.mkdir()
+        second_workspace.mkdir()
+        first_target, first_report = write_finalizable_target(
+            first_workspace
+        )
+        second_target, second_report = write_finalizable_target(
+            second_workspace
+        )
+        resolver = ReportStartResolver(
+            self.service,
+            workspace_root=self.workspace,
+        )
+        fixture = json.loads(
+            REPORT_FIXTURE.read_text(encoding="utf-8")
+        )
+
+        started = []
+        for target in (first_target, second_target):
+            handoff = create_start_handoff(
+                target,
+                deployable_subject_ids=("deployable:jpetstore",),
+                relationship_edge_ids=("edge:jpetstore:mysql",),
+            )
+            command = replace(
+                resolver(StartToolCommand(**handoff)),
+                initial_payload=fixture,
+            )
+            started.append(self.service.start(command))
+
+        result = self.service.finalize(
+            SimpleNamespace(
+                session_id=started[0].session_id,
+                expected_state_version=started[0].state_version,
+                idempotency_key="finalize-first",
+            )
+        )
+
+        self.assertEqual(result.state, "COMPLETE")
+        self.assertNotEqual(
+            first_report.read_text(encoding="utf-8"), "# original\n"
+        )
+        self.assertEqual(
+            second_report.read_text(encoding="utf-8"), "# original\n"
+        )
+
+    def test_lifecycle_uses_descriptor_verified_target_payload(self):
+        handoff = self.handoff()
+        resolver = ReportStartResolver(
+            self.service,
+            workspace_root=self.workspace,
+            configured_target_json=self.target,
+        )
+        started = self.service.start(
+            resolver(StartToolCommand(**handoff))
+        )
+
+        with patch(
+            "report_lifecycle.load_target",
+            side_effect=AssertionError("target path reopened"),
+        ):
+            lifecycle = resolver.lifecycle_for(started.session_id)
+
+        self.assertEqual(lifecycle.target["mode"], "summary")
+        self.assertEqual(lifecycle.target_json, self.target)
+
+    def test_existing_finalize_journal_does_not_run_during_new_start(self):
+        journal = self.workspace / ".report-session/finalize-journal.json"
+        journal.write_text(
+            json.dumps(
+                {
+                    "session_id": "old-session",
+                    "phase": "candidate_written",
+                }
+            ),
+            encoding="utf-8",
+        )
+        handoff = self.handoff()
+
+        with patch(
+            "report_start_handoff.ReportLifecycle",
+            side_effect=AssertionError("new start recovered a journal"),
+        ):
+            result = self.handler().execute_tool_call(Call(handoff))
+
+        self.assertTrue(result["ok"], result)
+        self.assertTrue(journal.exists())
 
     def test_hash_mismatch_rejects_without_session_state(self):
         handoff = self.handoff()
@@ -287,6 +495,77 @@ class ReportStartHandoffTests(unittest.TestCase):
         )
         self.assertEqual(self.count("sessions"), 0)
         self.assertEqual(self.count("start_results"), 0)
+
+    def test_target_swap_after_descriptor_open_creates_no_state(self):
+        handoff = self.handoff()
+        replacement = self.workspace / "replacement-target.json"
+        replacement.write_text(
+            json.dumps(
+                {
+                    "mode": "summary",
+                    "artifacts": {"report": "replacement.md"},
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        def swap(kind, identity):
+            if kind == "target":
+                replacement.replace(Path(identity))
+
+        handler = ReportToolHandler(
+            self.service,
+            start_resolver=ReportStartResolver(
+                self.service,
+                workspace_root=self.workspace,
+                configured_target_json=self.target,
+                open_fault_hook=swap,
+            ),
+        )
+
+        result = handler.execute_tool_call(Call(handoff))
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(self.count("sessions"), 0)
+
+    def test_snapshot_swap_after_descriptor_open_creates_no_state(self):
+        handoff = self.handoff()
+        snapshot = (
+            self.workspace
+            / ".report-session/snapshots"
+            / f"{handoff['analysis_snapshot_id']}.json"
+        )
+        replacement = self.workspace / "replacement-snapshot.json"
+        replacement.write_bytes(
+            b'{"deployable_subject_ids":[],"mode":"summary",'
+            b'"relationship_edge_ids":[]}\n'
+        )
+
+        def swap(kind, identity):
+            if kind == "snapshot":
+                replacement.replace(Path(identity))
+
+        handler = ReportToolHandler(
+            self.service,
+            start_resolver=ReportStartResolver(
+                self.service,
+                workspace_root=self.workspace,
+                configured_target_json=self.target,
+                open_fault_hook=swap,
+            ),
+        )
+
+        result = handler.execute_tool_call(Call(handoff))
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(self.count("sessions"), 0)
+        self.assertNotEqual(
+            sha256(snapshot.read_bytes()).hexdigest(),
+            handoff["analysis_snapshot_id"],
+        )
 
     def test_outside_target_and_snapshot_symlink_are_rejected_without_state(self):
         with TemporaryDirectory() as outside_temporary:
@@ -388,6 +667,66 @@ class ReportStartHandoffTests(unittest.TestCase):
                 self.assertEqual(self.count("sessions"), 0)
                 self.assertEqual(self.count("start_results"), 0)
                 self.assertEqual(self.count("work_units"), 0)
+
+    def test_finalize_journal_cannot_rescue_invalid_new_start_target(self):
+        handoff = self.handoff()
+        journal = (
+            self.workspace
+            / ".report-session/finalize-journal.json"
+        )
+        journal.write_text(
+            json.dumps(
+                {
+                    "session_id": "unrelated-session",
+                    "canonical_path": str(
+                        self.workspace / "existing-report.md"
+                    ),
+                }
+            ),
+            encoding="utf-8",
+        )
+        cases = (
+            (
+                "missing artifacts",
+                {"mode": "summary"},
+            ),
+            (
+                "report path escape",
+                {
+                    "mode": "summary",
+                    "artifacts": {"report": "../outside.md"},
+                },
+            ),
+        )
+
+        for index, (label, payload) in enumerate(cases):
+            with self.subTest(label=label):
+                self.target.write_text(
+                    json.dumps(
+                        payload,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                result = self.handler().execute_tool_call(
+                    Call(
+                        {
+                            **handoff,
+                            "target_sha256": sha256(
+                                self.target.read_bytes()
+                            ).hexdigest(),
+                            "idempotency_key": (
+                                f"invalid-journal-start-{index}"
+                            ),
+                        }
+                    )
+                )
+
+                self.assertFalse(result["ok"])
+                self.assertEqual(self.count("sessions"), 0)
+                self.assertEqual(self.count("start_results"), 0)
 
     def test_service_error_never_contains_source_or_absolute_paths(self):
         handoff = self.handoff()

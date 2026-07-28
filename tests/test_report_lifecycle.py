@@ -108,6 +108,7 @@ class ReportLifecycleTests(unittest.TestCase):
             "target_json": self.target,
             "document_loader": lambda session_id: self.document,
             "contract": self.contract,
+            "recovery_session_id": "session-1",
         }
         options.update(overrides)
         return ReportLifecycle(**options)
@@ -479,6 +480,18 @@ class ReportLifecycleTests(unittest.TestCase):
                 / ".report-session/finalize-journal.json"
             ).exists()
         )
+
+    def test_malformed_target_journal_cannot_recover_other_session(self):
+        def crash(phase):
+            if phase == "candidate_written":
+                raise SimulatedCrash("owner stopped after candidate")
+
+        with self.assertRaises(SimulatedCrash):
+            self.finalize(self.lifecycle(crash_hook=crash))
+        self.target.write_text("{not-json", encoding="utf-8")
+
+        with self.assertRaises(ValueError):
+            self.lifecycle(recovery_session_id="session-2")
 
     def test_outside_target_path_after_crash_recovers_original_journal(self):
         def crash(phase):

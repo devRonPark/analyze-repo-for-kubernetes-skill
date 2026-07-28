@@ -10,13 +10,14 @@ from report_session_models import Lease, NewSession, SessionSnapshot, SessionSta
 
 
 T = TypeVar("T")
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
     session_id TEXT PRIMARY KEY,
     start_idempotency_key TEXT NOT NULL UNIQUE,
     analysis_snapshot_id TEXT NOT NULL,
     target_hash TEXT NOT NULL,
+    target_identity TEXT NOT NULL DEFAULT '',
     mode TEXT NOT NULL,
     state TEXT NOT NULL,
     state_version INTEGER NOT NULL DEFAULT 0,
@@ -141,6 +142,17 @@ class SQLiteReportSessionStore:
         self._connection.execute("PRAGMA busy_timeout=5000")
         self._connection.execute("PRAGMA journal_mode=WAL")
         self._connection.executescript(SCHEMA)
+        columns = {
+            row[1]
+            for row in self._connection.execute(
+                "PRAGMA table_info(sessions)"
+            )
+        }
+        if "target_identity" not in columns:
+            self._connection.execute(
+                "ALTER TABLE sessions ADD COLUMN "
+                "target_identity TEXT NOT NULL DEFAULT ''"
+            )
         self._connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
     def close(self) -> None:
@@ -165,16 +177,18 @@ class SQLiteReportSessionStore:
                     start_idempotency_key,
                     analysis_snapshot_id,
                     target_hash,
+                    target_identity,
                     mode,
                     state,
                     state_version
-                ) VALUES (?, ?, ?, ?, ?, ?, 0)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 0)
                 """,
                 (
                     session.session_id,
                     session.start_idempotency_key,
                     session.analysis_snapshot_id,
                     session.target_hash,
+                    session.target_identity,
                     session.mode,
                     SessionState.DISCOVERING.value,
                 ),
@@ -278,4 +292,5 @@ class SQLiteReportSessionStore:
             state=SessionState(row["state"]),
             state_version=row["state_version"],
             active_lease=active_lease,
+            target_identity=row["target_identity"],
         )

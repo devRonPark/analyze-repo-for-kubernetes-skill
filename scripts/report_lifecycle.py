@@ -92,6 +92,9 @@ class ReportLifecycle:
             str,
         ] = report_renderer.render_report,
         crash_hook: Callable[[str], None] | None = None,
+        target_payload: Mapping[str, object] | None = None,
+        verified_target_bytes: bytes | None = None,
+        recovery_session_id: str | None = None,
     ):
         self.store = store
         self.target_json = Path(target_json).expanduser().resolve(
@@ -110,12 +113,23 @@ class ReportLifecycle:
         self.contract = contract or report_contract.load_report_contract()
         self.renderer = renderer
         self.crash_hook = crash_hook or (lambda phase: None)
+        self.verified_target_bytes = verified_target_bytes
+        if target_payload is not None:
+            self.target = dict(target_payload)
+            self.canonical_path = self._canonical_from_target(
+                self.target
+            )
+            return
         try:
             self.target = load_target(self.target_json)
             self.canonical_path = self._canonical_from_target(self.target)
         except (OSError, ValueError):
             journal = self._load_journal()
-            if journal is None:
+            if (
+                journal is None
+                or recovery_session_id is None
+                or journal.get("session_id") != recovery_session_id
+            ):
                 raise
             self.target = {}
             self.canonical_path = self._journal_path(
@@ -155,6 +169,13 @@ class ReportLifecycle:
 
     def _target_binding_error(self, session_id: str) -> str | None:
         expected = self.store.load(session_id).target_hash
+        if self.verified_target_bytes is not None:
+            return (
+                None
+                if sha256(self.verified_target_bytes).hexdigest()
+                == expected
+                else "target hash mismatch"
+            )
         try:
             actual = sha256(self.target_json.read_bytes()).hexdigest()
         except OSError as error:

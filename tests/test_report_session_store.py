@@ -42,6 +42,71 @@ class ReportSessionStoreTests(unittest.TestCase):
         self.assertEqual(loaded.analysis_snapshot_id, "snapshot-1")
         reopened.close()
 
+    def test_schema_migrates_legacy_sessions_with_empty_target_identity(self):
+        self.database.parent.mkdir(parents=True)
+        connection = sqlite3.connect(self.database)
+        connection.execute(
+            """
+            CREATE TABLE sessions (
+                session_id TEXT PRIMARY KEY,
+                start_idempotency_key TEXT NOT NULL UNIQUE,
+                analysis_snapshot_id TEXT NOT NULL,
+                target_hash TEXT NOT NULL,
+                mode TEXT NOT NULL,
+                state TEXT NOT NULL,
+                state_version INTEGER NOT NULL DEFAULT 0
+            )
+            """
+        )
+        connection.execute(
+            "INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "legacy-session",
+                "legacy-start",
+                "legacy-snapshot",
+                "legacy-target",
+                "summary",
+                "READY",
+                0,
+            ),
+        )
+        connection.commit()
+        connection.close()
+
+        store = SQLiteReportSessionStore(self.database)
+        loaded = store.load("legacy-session")
+        columns = {
+            row[1]
+            for row in store.transact(
+                lambda current: current.execute(
+                    "PRAGMA table_info(sessions)"
+                ).fetchall()
+            )
+        }
+
+        self.assertIn("target_identity", columns)
+        self.assertEqual(loaded.target_identity, "")
+        store.close()
+
+    def test_new_session_persists_normalized_target_identity(self):
+        store = SQLiteReportSessionStore(self.database)
+        session = NewSession(
+            session_id="session-target",
+            start_idempotency_key="start-target",
+            analysis_snapshot_id="snapshot-target",
+            target_hash="target-hash",
+            mode="summary",
+            target_identity="/workspace/target.json",
+        )
+
+        store.create(session)
+        loaded = store.load(session.session_id)
+
+        self.assertEqual(
+            loaded.target_identity, "/workspace/target.json"
+        )
+        store.close()
+
     def test_active_lease_survives_store_reopen(self):
         store = SQLiteReportSessionStore(self.database)
         store.create(new_session())

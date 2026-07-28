@@ -22,6 +22,7 @@ class NewSession:
     analysis_snapshot_id: str
     target_hash: str
     mode: str
+    target_identity: str = ""
 
 
 @dataclass(frozen=True)
@@ -49,3 +50,4 @@ class SessionSnapshot:
     state: SessionState
     state_version: int
     active_lease: Lease | None = None
+    target_identity: str = ""

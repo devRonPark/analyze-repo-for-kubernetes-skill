@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, replace
 import json
 import sqlite3
-from typing import Mapping
+from typing import Callable, Mapping
 
 import report_contract
 from report_diagnostics import Diagnostic
@@ -37,6 +37,7 @@ class StartCommand:
     mode: str
     analysis_snapshot: AnalysisSnapshot
     initial_payload: object
+    target_identity: str = ""
 
 
 @dataclass(frozen=True)
@@ -204,11 +205,13 @@ class ReportSessionService:
         contract: report_contract.ReportContract | None = None,
         planner: DynamicLeasePlanner | None = None,
         lifecycle: object | None = None,
+        lifecycle_resolver: Callable[[str], object] | None = None,
     ):
         self.store = store
         self.contract = contract or report_contract.load_report_contract()
         self.planner = planner or DynamicLeasePlanner()
         self.lifecycle = lifecycle
+        self.lifecycle_resolver = lifecycle_resolver
 
     def _parse_payload(
         self, payload: object
@@ -460,7 +463,8 @@ class ReportSessionService:
 
         def operation(connection: sqlite3.Connection) -> ToolResult:
             existing = connection.execute(
-                "SELECT result_json, analysis_snapshot_id, target_hash, mode "
+                "SELECT result_json, analysis_snapshot_id, target_hash, "
+                "target_identity, mode "
                 "FROM start_results JOIN sessions USING (session_id) "
                 "WHERE idempotency_key = ?",
                 (command.idempotency_key,),
@@ -470,6 +474,8 @@ class ReportSessionService:
                     existing["analysis_snapshot_id"]
                     != command.analysis_snapshot_id
                     or existing["target_hash"] != command.target_hash
+                    or existing["target_identity"]
+                    != command.target_identity
                     or existing["mode"] != command.mode
                 ):
                     raise ValueError(
@@ -483,16 +489,18 @@ class ReportSessionService:
                     start_idempotency_key,
                     analysis_snapshot_id,
                     target_hash,
+                    target_identity,
                     mode,
                     state,
                     state_version
-                ) VALUES (?, ?, ?, ?, ?, ?, 0)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 0)
                 """,
                 (
                     command.session_id,
                     command.idempotency_key,
                     command.analysis_snapshot_id,
                     command.target_hash,
+                    command.target_identity,
                     command.mode,
                     (
                         SessionState.READY.value
@@ -1149,9 +1157,14 @@ class ReportSessionService:
         return self.store.transact(operation)
 
     def finalize(self, command: object) -> ToolResult:
-        if self.lifecycle is None:
+        lifecycle = (
+            self.lifecycle_resolver(command.session_id)
+            if self.lifecycle_resolver is not None
+            else self.lifecycle
+        )
+        if lifecycle is None:
             raise RuntimeError("report lifecycle이 구성되지 않았습니다")
-        result = self.lifecycle.finalize(
+        result = lifecycle.finalize(
             session_id=command.session_id,
             expected_state_version=command.expected_state_version,
             idempotency_key=command.idempotency_key,
@@ -1185,7 +1198,7 @@ class ReportSessionService:
             diagnostics,
             idempotency_key=command.idempotency_key,
         )
-        self.lifecycle.finish_repair_routing(command.session_id)
+        lifecycle.finish_repair_routing(command.session_id)
         return routed
 
     def _current_result(

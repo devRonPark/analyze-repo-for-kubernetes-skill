@@ -99,16 +99,26 @@ class ReportSessionServiceTests(unittest.TestCase):
         self.assertEqual(first.status, "lease_issued")
 
     def test_start_idempotency_key_cannot_rebind_immutable_inputs(self):
-        command = start_command()
+        command = replace(
+            start_command(),
+            target_identity="/workspace/first/target.json",
+        )
         self.service.start(command)
 
         with self.assertRaisesRegex(ValueError, "binding"):
             self.service.start(
-                replace(command, target_hash="different-target")
+                replace(
+                    command,
+                    target_identity="/workspace/second/target.json",
+                )
             )
 
         self.assertEqual(self.count("sessions"), 1)
         self.assertEqual(self.count("start_results"), 1)
+        self.assertEqual(
+            self.store.load(command.session_id).target_identity,
+            "/workspace/first/target.json",
+        )
 
     def test_fully_covered_start_is_rendering_ready_without_lease(self):
         payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
