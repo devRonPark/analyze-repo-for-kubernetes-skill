@@ -142,7 +142,7 @@ class ReportToolHandlerTests(unittest.TestCase):
             [
                 {
                     "code": "SERVICE_ERROR",
-                    "message": "database unavailable",
+                    "message": "report session service failed",
                 }
             ],
         )

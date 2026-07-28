@@ -1,6 +1,6 @@
 {
   "name": "analyze-repo-for-kubernetes",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Analyze application repositories for Kubernetes migration readiness with evidence-backed reports.",
   "author": {
     "name": "devRonPark",
@@ -16,6 +16,7 @@
     "qwen"
   ],
   "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Kubernetes 저장소 분석기",
     "shortDescription": "근거 기반 Kubernetes 이관 준비 상태 분석",

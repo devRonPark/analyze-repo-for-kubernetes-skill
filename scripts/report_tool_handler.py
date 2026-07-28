@@ -169,6 +169,10 @@ def _envelope(result: ToolResult) -> dict[str, object]:
     }
 
 
+def compact_tool_result(result: ToolResult) -> dict[str, object]:
+    return _envelope(result)
+
+
 def _claim_payload(claim: object) -> dict[str, object]:
     return {
         "claim_id": claim.claim_id,
@@ -276,11 +280,11 @@ class ReportToolHandler:
             )
         try:
             return _envelope(self._dispatch(command))
-        except Exception as error:
+        except Exception:
             return _empty_envelope(
                 session_id=getattr(command, "session_id", ""),
                 diagnostic_code="SERVICE_ERROR",
-                message=str(error),
+                message="report session service failed",
             )
 
 

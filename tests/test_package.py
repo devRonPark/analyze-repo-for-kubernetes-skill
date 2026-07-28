@@ -220,6 +220,22 @@ class SkillPackageTests(unittest.TestCase):
         ):
             self.assertIn(f'"{artifact}"', validator)
 
+    def test_package_requires_report_tool_runtime_artifacts(self):
+        validator = (ROOT / "scripts/validate_plugin_package.py").read_text(
+            encoding="utf-8"
+        )
+
+        for artifact in (
+            ".mcp.json",
+            "mcp/report_tool_server.py",
+            "scripts/report_tool_schemas.py",
+            "scripts/report_tool_commands.py",
+            "scripts/report_tool_handler.py",
+            "scripts/report_model_protocol.py",
+            "scripts/report_orchestrator.py",
+        ):
+            self.assertIn(f'"{artifact}"', validator)
+
     def test_plugin_owns_one_nested_skill(self):
         self.assertTrue(PLUGIN_SKILL.is_file())
         self.assertFalse((ROOT / "SKILL.md").exists())

@@ -6,7 +6,8 @@ import json
 from typing import Mapping
 
 from report_model_protocol import ProtocolError, assemble_tool_stream
-from report_tool_handler import ReportToolHandler
+from report_session_service import ToolResult
+from report_tool_handler import ReportToolHandler, compact_tool_result
 from report_tool_schemas import schema_for
 
 
@@ -62,6 +63,7 @@ class ReportContext:
         compact = {
             "required_tool": expected_tool,
             "retry_key": self.retry_key(expected_tool),
+            "idempotency_key": self.retry_key(expected_tool),
             "result": self._result,
         }
         return [
@@ -146,12 +148,20 @@ def run_report_loop(
         try:
             stream = model.chat(**request)
             call = assemble_tool_stream(stream, expected_tool)
-        except TimeoutError as error:
+        except TimeoutError:
             code = "TRANSPORT_TIMEOUT"
-            _record_transport_failure(service, context.result, code)
+            failure_result = _record_transport_failure(
+                service, context.result, code
+            )
+            if failure_result is not None:
+                context.replace_with_compact_result(failure_result)
             continue
         except ProtocolError as error:
-            _record_transport_failure(service, context.result, error.code)
+            failure_result = _record_transport_failure(
+                service, context.result, error.code
+            )
+            if failure_result is not None:
+                context.replace_with_compact_result(failure_result)
             continue
 
         payload_hash = sha256(
@@ -162,13 +172,14 @@ def run_report_loop(
         if not isinstance(result, Mapping):
             raise RuntimeError("tool handler returned a non-object result")
         after_progress = _completed_units(result)
-        if (
-            payload_hash == seen_payload_hash
-            and after_progress <= before_progress
-        ):
-            identical_without_progress += 1
+        if after_progress <= before_progress:
+            identical_without_progress = (
+                identical_without_progress + 1
+                if payload_hash == seen_payload_hash
+                else 1
+            )
         else:
-            identical_without_progress = 1
+            identical_without_progress = 0
         seen_payload_hash = payload_hash
         if identical_without_progress >= 3:
             raise RuntimeError(
@@ -183,7 +194,7 @@ def _record_transport_failure(
     service: object,
     result: Mapping[str, object],
     code: str,
-) -> None:
+) -> Mapping[str, object] | None:
     session_id = result.get("session_id")
     lease = result.get("lease")
     lease_id = (
@@ -193,4 +204,11 @@ def _record_transport_failure(
         raise RuntimeError(
             f"{code}: transport failure has no active report lease"
         )
-    service.record_transport_failure(session_id, lease_id, code)
+    failure_result = service.record_transport_failure(
+        session_id, lease_id, code
+    )
+    if isinstance(failure_result, Mapping):
+        return failure_result
+    if isinstance(failure_result, ToolResult):
+        return compact_tool_result(failure_result)
+    return None

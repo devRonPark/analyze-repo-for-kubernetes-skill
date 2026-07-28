@@ -2,7 +2,11 @@
 
 Qwen Code 또는 Codex가 애플리케이션 Repository를 Kubernetes 이관 관점에서 근거 기반으로 분석하도록 만드는 Codex Plugin입니다. 배포 단위는 저장소 전체이며, workflow Skill은 `skills/analyze-repo-for-kubernetes`에 있습니다.
 
-현재 Plugin Packaging Foundation은 nested Skill 배포 경계만 제공합니다. Local MCP backend와 `.mcp.json` 등록은 후속 Tool Orchestration Slice에서 함께 추가됩니다.
+Plugin은 nested Skill과 `.mcp.json`에 등록된 local stdio report Tool backend를 함께 배포합니다. backend는 foreground JSON-RPC 프로세스로 실행되며 TCP listener나 TTY에 의존하지 않습니다.
+
+## Tool Orchestration
+
+보고서 단계는 `report_session_start`, `report_chunk_submit`, `report_session_sync`, `report_session_finalize` 네 도구만 노출합니다. 모델 응답은 stream 종료, 단일 expected Tool, 유효한 JSON argument와 `finish_reason=tool_calls`가 모두 확인된 뒤에만 handler로 전달됩니다. 누락된 finish reason과 partial argument는 semantic state를 변경하지 않으며 현재 lease를 축소해 재시도합니다.
 
 분석 목적에 따라 출력 깊이를 자동으로 정합니다. 사용자가 전체 상세 보고서를 요청한 경우에만 상세 분석을 사용하고, 그 외에는 의사결정 중심의 기본 분석으로 진행합니다.
 

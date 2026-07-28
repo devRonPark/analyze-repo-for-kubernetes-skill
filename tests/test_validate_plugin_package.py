@@ -62,6 +62,28 @@ class ValidatePluginPackageTests(unittest.TestCase):
     def test_valid_copied_plugin_package_has_no_errors(self):
         self.assertEqual(self.validate(), ())
 
+    def test_missing_mcp_config_and_server_are_rejected(self):
+        (self.package / ".mcp.json").unlink()
+        (self.package / "mcp/report_tool_server.py").unlink()
+
+        errors = "\n".join(self.validate())
+
+        self.assertIn(".mcp.json", errors)
+        self.assertIn("mcp/report_tool_server.py", errors)
+
+    def test_manifest_and_mcp_config_register_local_stdio_server(self):
+        manifest = self.manifest()
+        config = json.loads(
+            (self.package / ".mcp.json").read_text(encoding="utf-8")
+        )
+
+        self.assertEqual(manifest["mcpServers"], "./.mcp.json")
+        server = config["mcpServers"]["report-tools"]
+        self.assertEqual(server["type"], "stdio")
+        self.assertEqual(server["command"], "python3")
+        self.assertIn("report_tool_server.py", server["args"][0])
+        self.assertNotIn("url", server)
+
     def test_missing_manifest_is_rejected(self):
         (self.package / ".codex-plugin/plugin.json").unlink()
 

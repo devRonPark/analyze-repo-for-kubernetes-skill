@@ -89,11 +89,13 @@ class FakeModel:
 
 
 class FakeService:
-    def __init__(self):
+    def __init__(self, failure_result=None):
         self.failures = []
+        self.failure_result = failure_result
 
     def record_transport_failure(self, session_id, lease_id, code):
         self.failures.append((session_id, lease_id, code))
+        return self.failure_result
 
 
 class FakeHandler:
@@ -207,7 +209,12 @@ class ReportOrchestratorTests(unittest.TestCase):
 
     def test_timeout_is_transport_failure_and_retry_key_is_stable(self):
         model = FakeModel([TimeoutError("stream timed out"), complete_stream()])
-        service = FakeService()
+        reduced = initial_result()
+        reduced["lease"] = {
+            **reduced["lease"],
+            "output_token_budget": 512,
+        }
+        service = FakeService(reduced)
         handler = FakeHandler([complete_result()])
         context = ReportContext(initial_result=initial_result())
 
@@ -220,6 +227,7 @@ class ReportOrchestratorTests(unittest.TestCase):
             json.loads(first_prompt)["retry_key"],
             json.loads(second_prompt)["retry_key"],
         )
+        self.assertEqual(model.requests[1]["max_tokens"], 512)
 
     def test_model_call_is_sequential_deterministic_and_context_is_compact(self):
         model = FakeModel([complete_stream()])
@@ -245,6 +253,46 @@ class ReportOrchestratorTests(unittest.TestCase):
         serialized = json.dumps(request["messages"], ensure_ascii=False)
         self.assertNotIn("report_markdown", serialized)
         self.assertNotIn("source_body", serialized)
+
+    def test_three_identical_payloads_without_progress_stop_the_loop(self):
+        model = FakeModel(
+            [complete_stream(), complete_stream(), complete_stream()]
+        )
+        service = FakeService()
+        handler = FakeHandler(
+            [initial_result(), initial_result(), initial_result()]
+        )
+        context = ReportContext(initial_result=initial_result())
+
+        with self.assertRaisesRegex(RuntimeError, "identical"):
+            run_report_loop(model, service, context, handler=handler)
+
+        self.assertEqual(len(handler.calls), 3)
+
+    def test_max_step_guard_stops_non_completing_unique_calls(self):
+        streams = [
+            complete_stream(
+                arguments={**ARGUMENTS, "request_id": f"request-{index}"}
+            )
+            for index in range(20)
+        ]
+        results = []
+        for index in range(20):
+            result = initial_result()
+            result["progress"] = {
+                "completed_units": index + 1,
+                "known_units": 0,
+            }
+            results.append(result)
+        model = FakeModel(streams)
+        service = FakeService()
+        handler = FakeHandler(results)
+        context = ReportContext(initial_result=initial_result())
+
+        with self.assertRaisesRegex(RuntimeError, "max steps: 20"):
+            run_report_loop(model, service, context, handler=handler)
+
+        self.assertEqual(len(handler.calls), 20)
 
     def test_transport_failure_shrinks_lease_without_state_change(self):
         with TemporaryDirectory() as temporary:
