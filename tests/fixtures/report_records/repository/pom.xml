@@ -1,0 +1,10 @@
+<project>
+  <artifactId>jpetstore</artifactId>
+  <packaging>jar</packaging>
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+  </properties>
+  <build>
+    <finalName>jpetstore</finalName>
+  </build>
+</project>

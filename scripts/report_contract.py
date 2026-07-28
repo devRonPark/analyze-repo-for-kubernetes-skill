@@ -11,6 +11,24 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONTRACT_PATH = ROOT / "contracts" / "report-contract-v1.json"
 SCHEMA_VERSION = "report-contract/v1"
 REQUIRED_MODES = ("summary", "detailed")
+REQUIRED_FIELD_GROUPS = (
+    "scope",
+    "component_runtime",
+    "component_config_state",
+    "component_k8s_input",
+    "deployment_evidence",
+    "readiness",
+)
+FIELD_RENDERERS = frozenset(("text", "code", "evidence", "verdict"))
+
+
+@dataclass(frozen=True)
+class ReportField:
+    field_id: str
+    label: str
+    required: bool
+    repeatable: bool
+    renderer: str
 
 
 @dataclass(frozen=True)
@@ -37,6 +55,7 @@ class ReportMode:
 class ReportContract:
     schema_version: str
     modes: Mapping[str, ReportMode]
+    field_groups: Mapping[str, tuple[ReportField, ...]]
 
     def mode(self, name: str) -> ReportMode:
         try:
@@ -44,10 +63,28 @@ class ReportContract:
         except KeyError as error:
             raise ValueError(f"지원하지 않는 report mode입니다: {name}") from error
 
+    def fields_for(self, group: str) -> tuple[ReportField, ...]:
+        try:
+            return self.field_groups[group]
+        except KeyError as error:
+            raise ValueError(f"지원하지 않는 field group입니다: {group}") from error
+
+    def field(self, group: str, field_id: str) -> ReportField:
+        for field in self.fields_for(group):
+            if field.field_id == field_id:
+                return field
+        raise ValueError(f"{group} group에서 지원하지 않는 field입니다: {field_id}")
+
 
 def _non_empty_string(value: object, label: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError(f"{label}은 비어 있지 않은 string이어야 합니다")
+    return value
+
+
+def _boolean(value: object, label: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"{label}은 boolean이어야 합니다")
     return value
 
 
@@ -60,6 +97,44 @@ def load_report_contract(path: Path = DEFAULT_CONTRACT_PATH) -> ReportContract:
     raw_modes = payload.get("modes")
     if not isinstance(raw_modes, dict):
         raise ValueError("report contract modes는 object여야 합니다")
+
+    raw_field_groups = payload.get("field_groups")
+    if not isinstance(raw_field_groups, dict):
+        raise ValueError("report contract field_groups는 object여야 합니다")
+    field_groups: dict[str, tuple[ReportField, ...]] = {}
+    for group in REQUIRED_FIELD_GROUPS:
+        raw_fields = raw_field_groups.get(group)
+        if not isinstance(raw_fields, list) or not raw_fields:
+            raise ValueError(f"report contract에 {group} field group이 없습니다")
+        fields: list[ReportField] = []
+        field_ids: set[str] = set()
+        for index, raw_field in enumerate(raw_fields):
+            if not isinstance(raw_field, dict):
+                raise ValueError(f"{group}[{index}] field는 object여야 합니다")
+            field_id = _non_empty_string(
+                raw_field.get("field_id"), f"{group}[{index}].field_id"
+            )
+            label = _non_empty_string(raw_field.get("label"), f"{group}[{index}].label")
+            required = _boolean(
+                raw_field.get("required"), f"{group}[{index}].required"
+            )
+            repeatable = _boolean(
+                raw_field.get("repeatable"), f"{group}[{index}].repeatable"
+            )
+            renderer = _non_empty_string(
+                raw_field.get("renderer"), f"{group}[{index}].renderer"
+            )
+            if renderer not in FIELD_RENDERERS:
+                raise ValueError(
+                    f"{group}[{index}].renderer가 지원되지 않습니다: {renderer}"
+                )
+            if field_id in field_ids:
+                raise ValueError(f"{group} group에 중복 field ID가 있습니다: {field_id}")
+            field_ids.add(field_id)
+            fields.append(
+                ReportField(field_id, label, required, repeatable, renderer)
+            )
+        field_groups[group] = tuple(fields)
 
     modes: dict[str, ReportMode] = {}
     for name in REQUIRED_MODES:
@@ -91,7 +166,11 @@ def load_report_contract(path: Path = DEFAULT_CONTRACT_PATH) -> ReportContract:
             sections.append(ReportSection(key, heading, renderer_type))
         modes[name] = ReportMode(name, title, tuple(sections))
 
-    return ReportContract(SCHEMA_VERSION, MappingProxyType(modes))
+    return ReportContract(
+        SCHEMA_VERSION,
+        MappingProxyType(modes),
+        MappingProxyType(field_groups),
+    )
 
 
 def headings_for(mode: str) -> tuple[str, ...]:

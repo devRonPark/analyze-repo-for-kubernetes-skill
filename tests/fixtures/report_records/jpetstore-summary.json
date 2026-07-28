@@ -1,0 +1,72 @@
+{
+  "mode": "summary",
+  "subjects": [
+    {"subject_id": "dependency:mysql", "kind": "dependency", "display_name": "MySQL"},
+    {"subject_id": "deployable:jpetstore", "kind": "deployable", "display_name": "JPetStore"},
+    {"subject_id": "scope:repository", "kind": "scope", "display_name": "Repository"}
+  ],
+  "claims": [
+    {"claim_id": "scope:target-type", "section_key": "scope", "subject_id": "scope:repository", "field": "target_type", "value": "local checkout", "status": "confirmed", "evidence": [], "reason": ""},
+    {"claim_id": "scope:target-location", "section_key": "scope", "subject_id": "scope:repository", "field": "target_location", "value": "fixture repository", "status": "confirmed", "evidence": [], "reason": ""},
+    {"claim_id": "scope:access-method", "section_key": "scope", "subject_id": "scope:repository", "field": "access_method", "value": "read-only", "status": "confirmed", "evidence": [], "reason": ""},
+    {"claim_id": "scope:repository-root", "section_key": "scope", "subject_id": "scope:repository", "field": "repository_root", "value": ".", "status": "confirmed", "evidence": [], "reason": ""},
+    {"claim_id": "scope:revision", "section_key": "scope", "subject_id": "scope:repository", "field": "revision", "value": "fixture", "status": "confirmed", "evidence": [], "reason": ""},
+    {"claim_id": "scope:analysis-path", "section_key": "scope", "subject_id": "scope:repository", "field": "analysis_path", "value": ".", "status": "confirmed", "evidence": [], "reason": ""},
+    {"claim_id": "scope:output-mode", "section_key": "scope", "subject_id": "scope:repository", "field": "output_mode", "value": "summary", "status": "confirmed", "evidence": [], "reason": ""},
+    {"claim_id": "runtime:execution-form", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "execution_form", "value": "Spring Boot application", "status": "confirmed", "evidence": ["pom.xml:1"], "reason": ""},
+    {"claim_id": "runtime:path", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "path", "value": ".", "status": "confirmed", "evidence": ["pom.xml:1"], "reason": ""},
+    {"claim_id": "runtime:language", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "language", "value": "Java", "status": "confirmed", "evidence": ["pom.xml:2"], "reason": ""},
+    {"claim_id": "runtime:framework", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "framework", "value": "Spring Boot", "status": "inferred", "evidence": ["pom.xml:3"], "reason": "build plugin으로 추론"},
+    {"claim_id": "runtime:runtime", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "runtime", "value": "Java 17", "status": "confirmed", "evidence": ["pom.xml:5"], "reason": ""},
+    {"claim_id": "runtime:package-manager", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "package_manager", "value": "Maven", "status": "confirmed", "evidence": ["pom.xml:1"], "reason": ""},
+    {"claim_id": "runtime:install-command", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "install_command", "value": "mvn dependency:go-offline", "status": "confirmed", "evidence": ["pom.xml:7"], "reason": ""},
+    {"claim_id": "runtime:build-command", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "build_command", "value": "mvn package", "status": "confirmed", "evidence": ["pom.xml:7"], "reason": ""},
+    {"claim_id": "runtime:image-build-command", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "image_build_command", "value": "미확인", "status": "unknown", "evidence": ["검색(scope=repository, pattern=Dockerfile, result=없음)"], "reason": "이미지 빌드 정의가 없음"},
+    {"claim_id": "runtime:startup-command", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "startup_command", "value": "java -jar /app/jpetstore.jar", "status": "confirmed", "evidence": ["docker-compose.yml:4"], "reason": ""},
+    {"claim_id": "runtime:containerization", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "containerization", "value": "Compose image", "status": "confirmed", "evidence": ["docker-compose.yml:2"], "reason": ""},
+    {"claim_id": "runtime:protocol", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "protocol", "value": "HTTP", "status": "confirmed", "evidence": ["src/main/resources/application.yml:1"], "reason": ""},
+    {"claim_id": "runtime:listener-port", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "listener_port", "value": "8080", "status": "confirmed", "evidence": ["src/main/resources/application.yml:2"], "reason": ""},
+    {"claim_id": "runtime:health-check", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "health_check", "value": "미확인", "status": "unknown", "evidence": ["검색(scope=repository, pattern=healthcheck, result=없음)"], "reason": "배포 health check가 없음"},
+    {"claim_id": "config:configuration", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "configuration", "value": "Spring application configuration", "status": "confirmed", "evidence": ["src/main/resources/application.yml:1"], "reason": ""},
+    {"claim_id": "config:secret", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "secret", "value": "external Secret reference", "status": "confirmed", "evidence": ["src/main/resources/application.yml:4"], "reason": ""},
+    {"claim_id": "config:writable-state", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "writable_state", "value": "MySQL volume", "status": "confirmed", "evidence": ["docker-compose.yml:11"], "reason": ""},
+    {"claim_id": "config:apply-time", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "apply_time", "value": "startup", "status": "confirmed", "evidence": ["docker-compose.yml:1"], "reason": ""},
+    {"claim_id": "config:shutdown-recovery", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "shutdown_recovery", "value": "graceful shutdown configured", "status": "confirmed", "evidence": ["src/main/resources/application.yml:7"], "reason": ""},
+    {"claim_id": "config:observability", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "observability", "value": "health and info endpoints", "status": "confirmed", "evidence": ["src/main/resources/application.yml:9"], "reason": ""},
+    {"claim_id": "k8s:workload-kind", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "workload_kind", "value": "Deployment", "status": "inferred", "evidence": ["docker-compose.yml:2"], "reason": "stateless application 형태"},
+    {"claim_id": "k8s:metadata-name", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "metadata_name", "value": "jpetstore", "status": "confirmed", "evidence": ["pom.xml:2"], "reason": ""},
+    {"claim_id": "k8s:image", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "image", "value": "example/jpetstore:fixture", "status": "confirmed", "evidence": ["docker-compose.yml:3"], "reason": ""},
+    {"claim_id": "k8s:command", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "command", "value": "java -jar /app/jpetstore.jar", "status": "confirmed", "evidence": ["docker-compose.yml:4"], "reason": ""},
+    {"claim_id": "k8s:args", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "args", "value": "미확인", "status": "unknown", "evidence": ["검색(scope=repository, pattern=container args, result=없음)"], "reason": "별도 args 정의가 없음"},
+    {"claim_id": "k8s:container-port", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "container_port", "value": "8080", "status": "confirmed", "evidence": ["docker-compose.yml:6"], "reason": ""},
+    {"claim_id": "k8s:service", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "service", "value": "ClusterIP", "status": "inferred", "evidence": ["docker-compose.yml:6"], "reason": "HTTP listener 노출"},
+    {"claim_id": "k8s:ingress", "section_key": "component_cards", "subject_id": "deployable:jpetstore", "field": "ingress", "value": "미확인", "status": "unknown", "evidence": ["검색(scope=repository, pattern=Ingress, result=없음)"], "reason": "외부 노출 요구가 없음"},
+    {"claim_id": "deployment:declaration", "section_key": "deployment_evidence", "subject_id": "deployable:jpetstore", "field": "deployment_declaration", "value": "Compose declaration", "status": "confirmed", "evidence": ["docker-compose.yml:1"], "reason": ""},
+    {"claim_id": "deployment:startup", "section_key": "deployment_evidence", "subject_id": "deployable:jpetstore", "field": "startup_definition", "value": "Compose command", "status": "confirmed", "evidence": ["docker-compose.yml:4"], "reason": ""},
+    {"claim_id": "deployment:baseline", "section_key": "deployment_evidence", "subject_id": "deployable:jpetstore", "field": "production_baseline", "value": "미확인", "status": "unknown", "evidence": ["검색(scope=repository, pattern=production deployment, result=없음)"], "reason": "production 기준 구성이 없음"},
+    {"claim_id": "readiness:verdict", "section_key": "readiness", "subject_id": "deployable:jpetstore", "field": "verdict", "value": "추가 정보 필요", "status": "confirmed", "evidence": ["docker-compose.yml:2"], "reason": ""},
+    {"claim_id": "readiness:reason", "section_key": "readiness", "subject_id": "deployable:jpetstore", "field": "reason", "value": "이미지 빌드와 health check 입력이 필요함", "status": "confirmed", "evidence": ["docker-compose.yml:2"], "reason": ""},
+    {"claim_id": "readiness:evidence", "section_key": "readiness", "subject_id": "deployable:jpetstore", "field": "supporting_evidence", "value": "Compose runtime definition", "status": "confirmed", "evidence": ["docker-compose.yml:1"], "reason": ""}
+  ],
+  "relationships": [
+    {
+      "edge_id": "edge:jpetstore:mysql",
+      "source_subject_id": "deployable:jpetstore",
+      "target_subject_id": "dependency:mysql",
+      "attributes": {
+        "apply_time": "startup",
+        "endpoint": "mysql:3306",
+        "execution_location": "same Compose project",
+        "kind": "database",
+        "management_boundary": "저장소에 배포 정의 있음",
+        "mechanism": "JDBC",
+        "required": "yes",
+        "state": "persistent",
+        "used_by_definition": "yes"
+      },
+      "status": "confirmed",
+      "evidence": ["src/main/resources/application.yml:5", "docker-compose.yml:7"],
+      "reason": ""
+    }
+  ]
+}
