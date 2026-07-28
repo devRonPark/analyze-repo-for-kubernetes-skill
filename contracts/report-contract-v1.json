@@ -1,5 +1,60 @@
 {
   "schema_version": "report-contract/v1",
+  "field_groups": {
+    "scope": [
+      {"field_id": "target_type", "label": "대상 유형", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "target_location", "label": "Repository URL 또는 Local path", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "access_method", "label": "접근 방식", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "repository_root", "label": "확인된 저장소 루트", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "revision", "label": "branch, tag 또는 commit", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "analysis_path", "label": "분석 경로", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "output_mode", "label": "출력 모드", "required": true, "repeatable": false, "renderer": "text"}
+    ],
+    "component_runtime": [
+      {"field_id": "execution_form", "label": "실행 형태", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "path", "label": "경로", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "language", "label": "언어", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "framework", "label": "프레임워크", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "runtime", "label": "런타임", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "package_manager", "label": "패키지 관리자", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "install_command", "label": "설치 명령", "required": true, "repeatable": false, "renderer": "code"},
+      {"field_id": "build_command", "label": "빌드 명령", "required": true, "repeatable": false, "renderer": "code"},
+      {"field_id": "image_build_command", "label": "이미지 빌드 명령", "required": true, "repeatable": false, "renderer": "code"},
+      {"field_id": "startup_command", "label": "운영 기동 명령", "required": true, "repeatable": false, "renderer": "code"},
+      {"field_id": "containerization", "label": "컨테이너화", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "protocol", "label": "프로토콜", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "listener_port", "label": "수신 포트", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "health_check", "label": "상태 확인", "required": true, "repeatable": false, "renderer": "text"}
+    ],
+    "component_config_state": [
+      {"field_id": "configuration", "label": "설정", "required": true, "repeatable": true, "renderer": "text"},
+      {"field_id": "secret", "label": "Secret", "required": true, "repeatable": true, "renderer": "text"},
+      {"field_id": "writable_state", "label": "쓰기 상태 또는 영속성", "required": true, "repeatable": true, "renderer": "text"},
+      {"field_id": "apply_time", "label": "적용 시점", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "shutdown_recovery", "label": "종료와 복구", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "observability", "label": "관찰 가능성", "required": true, "repeatable": false, "renderer": "text"}
+    ],
+    "component_k8s_input": [
+      {"field_id": "workload_kind", "label": "workload.kind", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "metadata_name", "label": "metadata.name", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "image", "label": "image", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "command", "label": "command", "required": true, "repeatable": false, "renderer": "code"},
+      {"field_id": "args", "label": "args", "required": true, "repeatable": false, "renderer": "code"},
+      {"field_id": "container_port", "label": "containerPort", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "service", "label": "Service", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "ingress", "label": "Ingress", "required": true, "repeatable": false, "renderer": "text"}
+    ],
+    "deployment_evidence": [
+      {"field_id": "deployment_declaration", "label": "확인된 배포 선언", "required": true, "repeatable": true, "renderer": "evidence"},
+      {"field_id": "startup_definition", "label": "저장소에서 확인한 기동 정의", "required": true, "repeatable": true, "renderer": "evidence"},
+      {"field_id": "production_baseline", "label": "운영 환경 배포 기준 구성", "required": true, "repeatable": true, "renderer": "evidence"}
+    ],
+    "readiness": [
+      {"field_id": "verdict", "label": "판정", "required": true, "repeatable": false, "renderer": "verdict"},
+      {"field_id": "reason", "label": "이유", "required": true, "repeatable": false, "renderer": "text"},
+      {"field_id": "supporting_evidence", "label": "판정을 뒷받침하는 근거", "required": true, "repeatable": true, "renderer": "evidence"}
+    ]
+  },
   "modes": {
     "summary": {
       "title": "Kubernetes 설계 입력 요약",

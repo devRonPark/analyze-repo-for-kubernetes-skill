@@ -18,6 +18,28 @@ def template_h2_headings(path: Path) -> tuple[str, ...]:
 
 
 class ReportContractTests(unittest.TestCase):
+    def test_component_runtime_fields_are_ordered_and_required(self):
+        fields = report_contract.load_report_contract().fields_for("component_runtime")
+
+        self.assertEqual(
+            [field.field_id for field in fields[:4]],
+            ["execution_form", "path", "language", "framework"],
+        )
+        self.assertTrue(all(field.required for field in fields))
+        self.assertEqual(fields[-1].label, "상태 확인")
+
+    def test_field_lookup_rejects_unknown_renderer_metadata(self):
+        payload = json.loads(
+            report_contract.DEFAULT_CONTRACT_PATH.read_text(encoding="utf-8")
+        )
+        payload["field_groups"]["scope"][0]["renderer"] = "model_markdown"
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "invalid-report-contract.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "renderer"):
+                report_contract.load_report_contract(path)
+
     def test_new_summary_contract_has_the_expected_title_and_ordered_headings(self):
         contract = report_contract.load_report_contract()
 
@@ -46,12 +68,13 @@ class ReportContractTests(unittest.TestCase):
         )
 
     def test_loader_rejects_missing_required_mode(self):
+        payload = json.loads(
+            report_contract.DEFAULT_CONTRACT_PATH.read_text(encoding="utf-8")
+        )
+        del payload["modes"]["detailed"]
         with TemporaryDirectory() as directory:
             path = Path(directory) / "invalid-report-contract.json"
-            path.write_text(
-                '{"schema_version":"report-contract/v1","modes":{"summary":{"title":"summary","sections":[{"key":"scope","heading":"## scope","renderer_type":"scope"}]}}}',
-                encoding="utf-8",
-            )
+            path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "detailed"):
                 report_contract.load_report_contract(path)
 
