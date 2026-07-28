@@ -76,12 +76,11 @@ def run(
     timed_out = False
 
     def stop_process_group() -> None:
-        if process.poll() is not None:
-            return
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except (AttributeError, OSError):
-            process.kill()
+            if process.poll() is None:
+                process.kill()
 
     while process.poll() is None:
         if output_exceeded.wait(timeout=0.01):
@@ -92,6 +91,14 @@ def run(
             stop_process_group()
             break
     returncode = process.wait()
+    while any(reader.is_alive() for reader in readers):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            timed_out = True
+            stop_process_group()
+            break
+        for reader in readers:
+            reader.join(timeout=min(0.01, remaining))
     for reader in readers:
         reader.join(timeout=0.5)
     process.stdout.close()

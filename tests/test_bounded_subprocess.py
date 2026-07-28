@@ -65,6 +65,26 @@ class BoundedSubprocessTests(unittest.TestCase):
         self.assertTrue(result.timed_out)
         self.assertLess(time.monotonic() - started, 1.0)
 
+    def test_exited_parent_cannot_leave_descendant_pipe_open(self):
+        started = time.monotonic()
+
+        result = bounded_subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import subprocess,sys;"
+                    "subprocess.Popen([sys.executable,'-c',"
+                    "'import time; time.sleep(10)'])"
+                ),
+            ],
+            timeout=0.05,
+            max_output_bytes=1024,
+        )
+
+        self.assertTrue(result.timed_out)
+        self.assertLess(time.monotonic() - started, 1.0)
+
 
 if __name__ == "__main__":
     unittest.main()
