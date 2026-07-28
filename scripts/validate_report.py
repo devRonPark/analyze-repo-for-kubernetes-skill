@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
+import json
 import re
 import sys
 from pathlib import Path
 
 import report_contract
+from report_diagnostics import Diagnostic
+import report_diagnostics
 
 SUMMARY_SECTIONS = [
     "## 1. 범위",
@@ -364,38 +368,45 @@ def overview_errors(text: str, contract: str) -> list[str]:
     return errors
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="생성된 Kubernetes 이관 보고서를 검증합니다.")
-    parser.add_argument("report", help="생성된 Markdown 보고서")
-    parser.add_argument("--mode", choices=["auto", "summary", "detailed"], default="auto")
-    parser.add_argument("--contract", choices=["auto", "new", "legacy"], default="auto")
-    parser.add_argument("--fixture", choices=sorted(FIXTURES), help="fixture별 검사를 적용합니다")
-    parser.add_argument(
-        "--repo-root",
-        type=Path,
-        help="인용한 file:line 위치를 검증할 분석 대상 저장소 루트",
-    )
-    args = parser.parse_args()
+@dataclass(frozen=True)
+class ValidationSummary:
+    diagnostics: tuple[Diagnostic, ...]
+    warnings: tuple[str, ...]
+    mode: str | None
+    contract: str | None
+    detection: str
 
-    path = Path(args.report)
-    if not path.is_file():
-        print(f"실패: 보고서를 찾을 수 없습니다: {path}")
-        return 1
 
-    text = path.read_text(encoding="utf-8")
+def _validate_text(
+    text: str,
+    *,
+    requested_mode: str = "auto",
+    requested_contract: str = "auto",
+    fixture: str | None = None,
+    repository_root: Path | None = None,
+) -> ValidationSummary:
     headings = markdown_h2_sections(text)
     errors: list[str] = []
     warnings: list[str] = []
-    if args.repo_root is not None and not args.repo_root.is_dir():
-        errors.append(f"저장소 루트를 찾을 수 없습니다: {args.repo_root}")
+    if repository_root is not None and not repository_root.is_dir():
+        errors.append(f"저장소 루트를 찾을 수 없습니다: {repository_root}")
     detected = detect_mode(text)
-    mode = detected if args.mode == "auto" else args.mode
+    mode = detected if requested_mode == "auto" else requested_mode
     if mode is None:
         errors.append("제목에서 보고서 모드를 감지할 수 없습니다")
-    elif detected is not None and args.mode != "auto" and detected != args.mode:
-        errors.append(f"보고서 제목은 {detected} 모드를 가리키지만 요청 모드는 {args.mode}입니다")
+    elif (
+        detected is not None
+        and requested_mode != "auto"
+        and detected != requested_mode
+    ):
+        errors.append(
+            f"보고서 제목은 {detected} 모드를 가리키지만 "
+            f"요청 모드는 {requested_mode}입니다"
+        )
 
-    contract, detection = detect_contract(headings, mode, args.contract)
+    contract, detection = detect_contract(
+        headings, mode, requested_contract
+    )
     if contract is None:
         errors.append(
             "보고서 계약을 감지할 수 없습니다: 신 계약 섹션명을 찾지 못했습니다. "
@@ -427,31 +438,133 @@ def main() -> int:
     errors.extend(
         repository_reference_errors(
             text,
-            args.repo_root if args.repo_root is not None and args.repo_root.is_dir() else None,
+            (
+                repository_root
+                if repository_root is not None and repository_root.is_dir()
+                else None
+            ),
         )
     )
     if contract == "legacy":
         for field in ["실행 위치", "적용 시점"]:
             if field not in text:
                 errors.append(f"필수 필드가 없습니다: {field}")
-    if args.fixture:
-        for term in FIXTURES[args.fixture]:
+    if fixture:
+        for term in FIXTURES[fixture]:
             if term not in text:
                 errors.append(f"fixture 기대값을 찾을 수 없습니다: {term}")
 
-    if errors:
-        if contract is not None and mode in {"summary", "detailed"}:
-            print(f"계약: {CONTRACT_LABELS[(contract, mode)]} (감지: {detection})")
-        for warning in warnings:
-            print(f"경고: {warning}")
-        for error in errors:
-            print(f"실패: {error}")
+    return ValidationSummary(
+        tuple(report_diagnostics.from_message(error) for error in errors),
+        tuple(warnings),
+        mode,
+        contract,
+        detection,
+    )
+
+
+def validate_text(
+    text: str,
+    *,
+    mode: str = "auto",
+    contract: str = "auto",
+    fixture: str | None = None,
+    repository_root: Path | None = None,
+) -> tuple[Diagnostic, ...]:
+    return _validate_text(
+        text,
+        requested_mode=mode,
+        requested_contract=contract,
+        fixture=fixture,
+        repository_root=repository_root,
+    ).diagnostics
+
+
+def _json_result(diagnostics: tuple[Diagnostic, ...]) -> str:
+    return json.dumps(
+        {
+            "valid": not diagnostics,
+            "errors": [
+                diagnostic.to_dict() for diagnostic in diagnostics
+            ],
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="생성된 Kubernetes 이관 보고서를 검증합니다.")
+    parser.add_argument("report", help="생성된 Markdown 보고서")
+    parser.add_argument("--mode", choices=["auto", "summary", "detailed"], default="auto")
+    parser.add_argument("--contract", choices=["auto", "new", "legacy"], default="auto")
+    parser.add_argument("--fixture", choices=sorted(FIXTURES), help="fixture별 검사를 적용합니다")
+    parser.add_argument(
+        "--repo-root",
+        type=Path,
+        help="인용한 file:line 위치를 검증할 분석 대상 저장소 루트",
+    )
+    parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        dest="output_format",
+    )
+    args = parser.parse_args()
+
+    path = Path(args.report)
+    if not path.is_file():
+        message = f"보고서를 찾을 수 없습니다: {path}"
+        if args.output_format == "json":
+            print(
+                _json_result(
+                    (
+                        Diagnostic(
+                            "REPORT_NOT_FOUND", "", "", "", message
+                        ),
+                    )
+                )
+            )
+        else:
+            print(f"실패: {message}")
         return 1
-    if contract is not None and mode in {"summary", "detailed"}:
-        print(f"계약: {CONTRACT_LABELS[(contract, mode)]} (감지: {detection})")
-    for warning in warnings:
+
+    summary = _validate_text(
+        path.read_text(encoding="utf-8"),
+        requested_mode=args.mode,
+        requested_contract=args.contract,
+        fixture=args.fixture,
+        repository_root=args.repo_root,
+    )
+    if args.output_format == "json":
+        print(_json_result(summary.diagnostics))
+        return 1 if summary.diagnostics else 0
+
+    if summary.diagnostics:
+        if (
+            summary.contract is not None
+            and summary.mode in {"summary", "detailed"}
+        ):
+            print(
+                f"계약: {CONTRACT_LABELS[(summary.contract, summary.mode)]} "
+                f"(감지: {summary.detection})"
+            )
+        for warning in summary.warnings:
+            print(f"경고: {warning}")
+        for diagnostic in summary.diagnostics:
+            print(f"실패: {diagnostic.message}")
+        return 1
+    if summary.contract is not None and summary.mode in {"summary", "detailed"}:
+        print(
+            f"계약: {CONTRACT_LABELS[(summary.contract, summary.mode)]} "
+            f"(감지: {summary.detection})"
+        )
+    for warning in summary.warnings:
         print(f"경고: {warning}")
-    print(f"성공: 보고서에 필요한 {mode} 브리핑 구조가 포함되어 있습니다.")
+    print(
+        f"성공: 보고서에 필요한 {summary.mode} 브리핑 구조가 "
+        "포함되어 있습니다."
+    )
     return 0
 
 

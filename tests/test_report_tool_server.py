@@ -1,4 +1,5 @@
 import json
+from hashlib import sha256
 import os
 from pathlib import Path
 import subprocess
@@ -26,22 +27,25 @@ def request(identifier, method, params=None):
 
 
 class ReportToolServerTests(unittest.TestCase):
-    def run_server(self, messages, database):
+    def run_server(self, messages, database, *, target_json=None):
         payload = "\n".join(
             json.dumps(message, separators=(",", ":"))
             for message in messages
         )
+        environment = {
+            **os.environ,
+            "REPORT_SESSION_DB": str(database),
+            "PYTHONDONTWRITEBYTECODE": "1",
+        }
+        if target_json is not None:
+            environment["REPORT_TARGET_JSON"] = str(target_json)
         result = subprocess.run(
             [sys.executable, str(SERVER)],
             input=payload + "\n",
             capture_output=True,
             text=True,
             cwd=ROOT,
-            env={
-                **os.environ,
-                "REPORT_SESSION_DB": str(database),
-                "PYTHONDONTWRITEBYTECODE": "1",
-            },
+            env=environment,
             timeout=10,
             check=False,
         )
@@ -163,6 +167,113 @@ class ReportToolServerTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0)
         self.assertEqual(responses[1]["error"]["code"], -32002)
+
+    def test_configured_server_finalizes_ready_session(self):
+        with TemporaryDirectory() as temporary:
+            workspace = Path(temporary)
+            database = workspace / "session.sqlite"
+            canonical = workspace / "analysis.md"
+            canonical.write_text("# template\n", encoding="utf-8")
+            target = workspace / "target.json"
+            target.write_text(
+                json.dumps(
+                    {
+                        "mode": "summary",
+                        "analysis_root": str(
+                            ROOT / "tests/fixtures/report_records/repository"
+                        ),
+                        "artifacts": {"report": str(canonical)},
+                        "validation": {
+                            "command": [
+                                sys.executable,
+                                str(
+                                    ROOT
+                                    / "scripts/validate_target_report.py"
+                                ),
+                                str(target),
+                            ],
+                            "report_command": [
+                                sys.executable,
+                                str(ROOT / "scripts/validate_report.py"),
+                                str(canonical),
+                                "--mode",
+                                "summary",
+                                "--contract",
+                                "new",
+                                "--repo-root",
+                                str(
+                                    ROOT
+                                    / "tests/fixtures/report_records/repository"
+                                ),
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            fixture = (
+                ROOT
+                / "tests/fixtures/report_records/jpetstore-summary.json"
+            )
+            store = SQLiteReportSessionStore(database)
+            ReportSessionService(store).start(
+                StartCommand(
+                    session_id="session-ready",
+                    idempotency_key="start-ready",
+                    analysis_snapshot_id="snapshot-ready",
+                    target_hash=sha256(target.read_bytes()).hexdigest(),
+                    mode="summary",
+                    analysis_snapshot=AnalysisSnapshot(
+                        mode="summary",
+                        deployable_subject_ids=("deployable:jpetstore",),
+                        relationship_edge_ids=("edge:jpetstore:mysql",),
+                    ),
+                    initial_payload=json.loads(
+                        fixture.read_text(encoding="utf-8")
+                    ),
+                )
+            )
+            store.close()
+
+            result, responses = self.run_server(
+                [
+                    request(
+                        1,
+                        "initialize",
+                        {
+                            "protocolVersion": "2025-06-18",
+                            "capabilities": {},
+                            "clientInfo": {"name": "test", "version": "1"},
+                        },
+                    ),
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "notifications/initialized",
+                    },
+                    request(
+                        2,
+                        "tools/call",
+                        {
+                            "name": "report_session_finalize",
+                            "arguments": {
+                                "session_id": "session-ready",
+                                "expected_state_version": 0,
+                                "idempotency_key": "finalize-ready",
+                            },
+                        },
+                    ),
+                ],
+                database,
+                target_json=target,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        finalized = responses[1]["result"]["structuredContent"]
+        self.assertTrue(finalized["ok"])
+        self.assertEqual(finalized["state"], "COMPLETE")
+        self.assertEqual(
+            finalized["artifact"]["path"], str(canonical)
+        )
 
     def test_malformed_json_returns_parse_error_and_server_exits_cleanly(self):
         with TemporaryDirectory() as temporary:

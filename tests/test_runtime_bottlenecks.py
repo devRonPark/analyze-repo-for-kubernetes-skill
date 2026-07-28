@@ -141,6 +141,14 @@ class RuntimeBottleneckTests(unittest.TestCase):
                 target["validation"]["command"],
                 [
                     "python3",
+                    str(ROOT / "scripts" / "validate_target_report.py"),
+                    str(workspace / "target.json"),
+                ],
+            )
+            self.assertEqual(
+                target["validation"]["report_command"],
+                [
+                    "python3",
                     str(ROOT / "scripts" / "validate_report.py"),
                     str(report),
                     "--mode",

@@ -6,6 +6,7 @@ import sqlite3
 from typing import Mapping
 
 import report_contract
+from report_diagnostics import Diagnostic
 from report_lease_planner import (
     DynamicLeasePlanner,
     LeaseMetrics,
@@ -20,7 +21,11 @@ from report_work_units import (
     WorkUnit,
     build_work_units,
     calculate_coverage,
+    diagnostics_to_repair_units,
 )
+
+
+MAX_REPAIR_ROUNDS = 3
 
 
 @dataclass(frozen=True)
@@ -63,6 +68,7 @@ class ToolResult:
     lease: Lease | None
     coverage: tuple[int, int]
     message: str = ""
+    artifact: Mapping[str, object] | None = None
 
 
 def _canonical_json(value: object) -> str:
@@ -130,6 +136,7 @@ def _result_json(result: ToolResult) -> str:
             "lease": _lease_to_dict(result.lease),
             "coverage": result.coverage,
             "message": result.message,
+            "artifact": result.artifact,
         }
     )
 
@@ -144,6 +151,7 @@ def _result_from_json(raw: str) -> ToolResult:
         lease=_lease_from_dict(payload["lease"]),
         coverage=tuple(payload["coverage"]),
         message=payload["message"],
+        artifact=payload.get("artifact"),
     )
 
 
@@ -195,10 +203,12 @@ class ReportSessionService:
         *,
         contract: report_contract.ReportContract | None = None,
         planner: DynamicLeasePlanner | None = None,
+        lifecycle: object | None = None,
     ):
         self.store = store
         self.contract = contract or report_contract.load_report_contract()
         self.planner = planner or DynamicLeasePlanner()
+        self.lifecycle = lifecycle
 
     def _parse_payload(
         self, payload: object
@@ -274,6 +284,15 @@ class ReportSessionService:
                 "claims": claims,
                 "relationships": relationships,
             }
+        )
+
+    def load_document(
+        self, session_id: str
+    ) -> report_records.ReportDocument:
+        return self.store.transact(
+            lambda connection: self._load_document(
+                connection, session_id
+            )
         )
 
     def _insert_document(
@@ -852,6 +871,312 @@ class ReportSessionService:
             return self._current_result(
                 command.session_id, "rejected", str(error)
             )
+
+    def _remove_repair_records(
+        self,
+        connection: sqlite3.Connection,
+        session_id: str,
+        diagnostics: tuple[Diagnostic, ...],
+        repair_units: tuple[WorkUnit, ...],
+    ) -> None:
+        relationship_ids = {
+            diagnostic.subject_id
+            for diagnostic in diagnostics
+            if diagnostic.section_key == "relationships"
+            and diagnostic.subject_id
+        }
+        if relationship_ids:
+            connection.executemany(
+                "DELETE FROM relationships "
+                "WHERE session_id = ? AND edge_id = ?",
+                (
+                    (session_id, edge_id)
+                    for edge_id in sorted(relationship_ids)
+                ),
+            )
+
+        repair_fields = {
+            (unit.subject_id, field)
+            for unit in repair_units
+            if unit.relationship_edge_id is None
+            for field in unit.required_fields
+        }
+        claim_ids = []
+        for row in connection.execute(
+            "SELECT claim_id, payload_json FROM claims "
+            "WHERE session_id = ?",
+            (session_id,),
+        ):
+            payload = json.loads(row["payload_json"])
+            subject_id = payload.get("subject_id")
+            field = payload.get("field")
+            if (subject_id, field) in repair_fields or (
+                (None, field) in repair_fields
+            ):
+                claim_ids.append(row["claim_id"])
+        connection.executemany(
+            "DELETE FROM claims WHERE session_id = ? AND claim_id = ?",
+            ((session_id, claim_id) for claim_id in claim_ids),
+        )
+
+    def route_repair_diagnostics(
+        self,
+        session_id: str,
+        diagnostics: tuple[Diagnostic, ...],
+        *,
+        idempotency_key: str | None = None,
+    ) -> ToolResult:
+        details = [diagnostic.to_dict() for diagnostic in diagnostics]
+
+        def operation(connection: sqlite3.Connection) -> ToolResult:
+            if idempotency_key is not None:
+                existing = connection.execute(
+                    "SELECT result_json FROM finalize_results "
+                    "WHERE session_id = ? AND idempotency_key = ?",
+                    (session_id, idempotency_key),
+                ).fetchone()
+                if existing is not None:
+                    return _result_from_json(existing["result_json"])
+
+            def persist(result: ToolResult) -> ToolResult:
+                if idempotency_key is not None:
+                    connection.execute(
+                        "INSERT INTO finalize_results("
+                        "session_id, idempotency_key, result_json"
+                        ") VALUES (?, ?, ?)",
+                        (
+                            session_id,
+                            idempotency_key,
+                            _result_json(result),
+                        ),
+                    )
+                return result
+
+            session = connection.execute(
+                "SELECT state, state_version FROM sessions "
+                "WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if session is None:
+                raise KeyError(
+                    f"report session을 찾을 수 없습니다: {session_id}"
+                )
+            active = self._active_lease(connection, session_id)
+            if active is not None:
+                completed, total = (
+                    connection.execute(
+                        "SELECT COUNT(*) FROM work_units "
+                        "WHERE session_id = ? AND status = 'COMPLETE'",
+                        (session_id,),
+                    ).fetchone()[0],
+                    connection.execute(
+                        "SELECT COUNT(*) FROM work_units "
+                        "WHERE session_id = ?",
+                        (session_id,),
+                    ).fetchone()[0],
+                )
+                return persist(
+                    ToolResult(
+                        "lease_issued",
+                        session_id,
+                        session["state"],
+                        session["state_version"],
+                        active,
+                        (completed, total),
+                    )
+                )
+            if session["state"] != SessionState.REPAIRING.value:
+                completed, total = (
+                    connection.execute(
+                        "SELECT COUNT(*) FROM work_units "
+                        "WHERE session_id = ? AND status = 'COMPLETE'",
+                        (session_id,),
+                    ).fetchone()[0],
+                    connection.execute(
+                        "SELECT COUNT(*) FROM work_units "
+                        "WHERE session_id = ?",
+                        (session_id,),
+                    ).fetchone()[0],
+                )
+                return ToolResult(
+                    "rejected",
+                    session_id,
+                    session["state"],
+                    session["state_version"],
+                    None,
+                    (completed, total),
+                    "REPAIRING session만 repair lease를 발급할 수 있습니다",
+                )
+
+            units = self._load_units(connection, session_id)
+            repair_units = diagnostics_to_repair_units(
+                diagnostics, units
+            )
+            repair_rounds = connection.execute(
+                "SELECT COUNT(*) FROM audit_events "
+                "WHERE session_id = ? "
+                "AND event_type = 'REPAIR_LEASE_ISSUED'",
+                (session_id,),
+            ).fetchone()[0]
+            if not repair_units or repair_rounds >= MAX_REPAIR_ROUNDS:
+                version = session["state_version"] + 1
+                reason = (
+                    "validation diagnostic을 repair work-unit에 "
+                    "안전하게 연결할 수 없습니다"
+                    if not repair_units
+                    else "repair budget을 초과했습니다"
+                )
+                connection.execute(
+                    "UPDATE sessions SET state = ?, state_version = ?, "
+                    "updated_at = CURRENT_TIMESTAMP WHERE session_id = ?",
+                    (SessionState.FAILED.value, version, session_id),
+                )
+                connection.execute(
+                    "INSERT INTO audit_events("
+                    "session_id, event_type, state_version, details_json"
+                    ") VALUES (?, 'REPAIR_FAILED', ?, ?)",
+                    (
+                        session_id,
+                        version,
+                        _canonical_json(
+                            {
+                                "reason": reason,
+                                "diagnostics": details,
+                                "repair_rounds": repair_rounds,
+                            }
+                        ),
+                    ),
+                )
+                completed, total = (
+                    connection.execute(
+                        "SELECT COUNT(*) FROM work_units "
+                        "WHERE session_id = ? AND status = 'COMPLETE'",
+                        (session_id,),
+                    ).fetchone()[0],
+                    connection.execute(
+                        "SELECT COUNT(*) FROM work_units "
+                        "WHERE session_id = ?",
+                        (session_id,),
+                    ).fetchone()[0],
+                )
+                return persist(
+                    ToolResult(
+                        "failed",
+                        session_id,
+                        SessionState.FAILED.value,
+                        version,
+                        None,
+                        (completed, total),
+                        reason,
+                    )
+                )
+
+            self._remove_repair_records(
+                connection, session_id, diagnostics, repair_units
+            )
+            connection.executemany(
+                "UPDATE work_units SET status = 'PENDING' "
+                "WHERE session_id = ? AND unit_id = ?",
+                (
+                    (session_id, unit.unit_id)
+                    for unit in repair_units
+                ),
+            )
+            version = session["state_version"] + 1
+            lease = self.planner.issue_or_resume(
+                LeasePlanningSnapshot(
+                    session_id=session_id,
+                    state_version=session["state_version"],
+                    pending_units=repair_units,
+                ),
+                LeaseMetrics(),
+            )
+            self._insert_lease(connection, lease)
+            connection.execute(
+                "UPDATE sessions SET state = ?, state_version = ?, "
+                "updated_at = CURRENT_TIMESTAMP WHERE session_id = ?",
+                (SessionState.COLLECTING.value, version, session_id),
+            )
+            connection.execute(
+                "INSERT INTO audit_events("
+                "session_id, event_type, state_version, details_json"
+                ") VALUES (?, 'REPAIR_LEASE_ISSUED', ?, ?)",
+                (
+                    session_id,
+                    version,
+                    _canonical_json(
+                        {
+                            "diagnostics": details,
+                            "unit_ids": lease.allowed_unit_ids,
+                            "repair_round": repair_rounds + 1,
+                        }
+                    ),
+                ),
+            )
+            completed, total = (
+                connection.execute(
+                    "SELECT COUNT(*) FROM work_units "
+                    "WHERE session_id = ? AND status = 'COMPLETE'",
+                    (session_id,),
+                ).fetchone()[0],
+                connection.execute(
+                    "SELECT COUNT(*) FROM work_units "
+                    "WHERE session_id = ?",
+                    (session_id,),
+                ).fetchone()[0],
+            )
+            return persist(
+                ToolResult(
+                    "lease_issued",
+                    session_id,
+                    SessionState.COLLECTING.value,
+                    version,
+                    lease,
+                    (completed, total),
+                )
+            )
+
+        return self.store.transact(operation)
+
+    def finalize(self, command: object) -> ToolResult:
+        if self.lifecycle is None:
+            raise RuntimeError("report lifecycle이 구성되지 않았습니다")
+        result = self.lifecycle.finalize(
+            session_id=command.session_id,
+            expected_state_version=command.expected_state_version,
+            idempotency_key=command.idempotency_key,
+        )
+        if result.status != "validation_failed":
+            return result
+        try:
+            raw_diagnostics = json.loads(result.message)
+            diagnostics = tuple(
+                Diagnostic(
+                    code=str(item["code"]),
+                    section_key=str(item["section_key"]),
+                    subject_id=str(item["subject_id"]),
+                    field=str(item["field"]),
+                    message=str(item["message"]),
+                )
+                for item in raw_diagnostics
+            )
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+            diagnostics = (
+                Diagnostic(
+                    "VALIDATOR_INFRASTRUCTURE_ERROR",
+                    "",
+                    "",
+                    "",
+                    "structured validator diagnostics를 읽을 수 없습니다",
+                ),
+            )
+        routed = self.route_repair_diagnostics(
+            command.session_id,
+            diagnostics,
+            idempotency_key=command.idempotency_key,
+        )
+        self.lifecycle.finish_repair_routing(command.session_id)
+        return routed
 
     def _current_result(
         self, session_id: str, status: str, message: str

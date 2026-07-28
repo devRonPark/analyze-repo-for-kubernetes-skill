@@ -71,6 +71,19 @@ class ValidatePluginPackageTests(unittest.TestCase):
         self.assertIn(".mcp.json", errors)
         self.assertIn("mcp/report_tool_server.py", errors)
 
+    def test_missing_report_lifecycle_runtime_files_are_rejected(self):
+        for relative in (
+            "scripts/report_diagnostics.py",
+            "scripts/report_lifecycle.py",
+            "scripts/validate_target_report.py",
+        ):
+            with self.subTest(relative=relative):
+                copied = self.package / relative
+                content = copied.read_bytes()
+                copied.unlink()
+                self.assertIn(relative, "\n".join(self.validate()))
+                copied.write_bytes(content)
+
     def test_manifest_and_mcp_config_register_local_stdio_server(self):
         manifest = self.manifest()
         config = json.loads(

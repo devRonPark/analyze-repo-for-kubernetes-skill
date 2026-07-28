@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import report_contract
+from report_diagnostics import Diagnostic
 import report_records
 
 
@@ -32,6 +33,72 @@ class Coverage:
     @property
     def rendering_ready(self) -> bool:
         return self.total_units == self.completed_units
+
+
+_DIAGNOSTIC_UNIT_TYPES = {
+    "scope": ("global_scope",),
+    "component_runtime": ("component_runtime",),
+    "component_config_state": ("component_configuration_state",),
+    "component_k8s_input": (
+        "component_kubernetes_input",
+        "component_minimum_input_gap",
+    ),
+    "deployment_evidence": ("component_deployment_evidence",),
+    "readiness": ("global_readiness",),
+}
+
+
+def diagnostics_to_repair_units(
+    diagnostics: tuple[Diagnostic, ...],
+    units: tuple[WorkUnit, ...],
+) -> tuple[WorkUnit, ...]:
+    selected: dict[str, WorkUnit] = {}
+    for diagnostic in diagnostics:
+        if (
+            diagnostic.section_key == "relationships"
+            and diagnostic.subject_id
+        ):
+            for unit in units:
+                if unit.relationship_edge_id == diagnostic.subject_id:
+                    selected[unit.unit_id] = unit
+            continue
+
+        allowed_types = _DIAGNOSTIC_UNIT_TYPES.get(
+            diagnostic.section_key, ()
+        )
+        if not allowed_types:
+            continue
+        for unit in units:
+            if unit.unit_type not in allowed_types:
+                continue
+            if (
+                diagnostic.subject_id
+                and unit.subject_id != diagnostic.subject_id
+            ):
+                continue
+            fields = (
+                (diagnostic.field,)
+                if diagnostic.field
+                and diagnostic.field in unit.required_fields
+                else unit.required_fields
+            )
+            if fields:
+                existing = selected.get(unit.unit_id)
+                if existing is not None:
+                    combined = set(existing.required_fields) | set(fields)
+                    fields = tuple(
+                        field
+                        for field in unit.required_fields
+                        if field in combined
+                    )
+                selected[unit.unit_id] = WorkUnit(
+                    unit.unit_id,
+                    unit.unit_type,
+                    unit.subject_id,
+                    fields,
+                    unit.relationship_edge_id,
+                )
+    return tuple(selected[key] for key in sorted(selected))
 
 
 def _field_ids(
