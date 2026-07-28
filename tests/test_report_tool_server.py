@@ -149,6 +149,71 @@ class ReportToolServerTests(unittest.TestCase):
         )
         self.assertNotIn('"jsonrpc"', result.stderr)
 
+    def test_tools_call_accepts_mcp_metadata_but_rejects_unknown_fields(self):
+        with TemporaryDirectory() as temporary:
+            database = Path(temporary) / "session.sqlite"
+            self.initialize_session(database)
+            result, responses = self.run_server(
+                [
+                    request(
+                        1,
+                        "initialize",
+                        {
+                            "protocolVersion": "2025-06-18",
+                            "capabilities": {},
+                            "clientInfo": {
+                                "name": "contract-test",
+                                "version": "1",
+                            },
+                        },
+                    ),
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "notifications/initialized",
+                    },
+                    request(
+                        2,
+                        "tools/call",
+                        {
+                            "name": "report_session_sync",
+                            "arguments": {
+                                "session_id": "session-1",
+                                "known_state_version": 0,
+                                "request_id": "request-metadata",
+                            },
+                            "_meta": {
+                                "progressToken": "qwen-progress-1"
+                            },
+                            "task": {"ttl": 1000},
+                        },
+                    ),
+                    request(
+                        3,
+                        "tools/call",
+                        {
+                            "name": "report_session_sync",
+                            "arguments": {
+                                "session_id": "session-1",
+                                "known_state_version": 0,
+                                "request_id": "request-unknown",
+                            },
+                            "unexpected": True,
+                        },
+                    ),
+                ],
+                database,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([response["id"] for response in responses], [1, 2, 3])
+        self.assertIn("result", responses[1], responses[1])
+        self.assertTrue(responses[1]["result"]["structuredContent"]["ok"])
+        self.assertEqual(
+            responses[1]["result"]["structuredContent"]["session_id"],
+            "session-1",
+        )
+        self.assertEqual(responses[2]["error"]["code"], -32602)
+
     def test_tools_are_rejected_before_initialized_notification(self):
         with TemporaryDirectory() as temporary:
             result, responses = self.run_server(
